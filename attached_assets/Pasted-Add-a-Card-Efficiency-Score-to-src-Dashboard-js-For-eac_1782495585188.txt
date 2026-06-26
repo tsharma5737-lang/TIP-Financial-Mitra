@@ -1,0 +1,50 @@
+Add a Card Efficiency Score to src/Dashboard.js. For each card, calculate a score out of 100 using this logic:
+
+1. Fee Value Score (25 points):
+- If annual fee is 0: full 25 points
+- If annual fee > 0: calculate (total benefits extracted / annual fee paid) ratio
+- Benefits extracted = (currentSpend x average cashback rate for top 2 categories) + lounge value (domestic lounges x 500 + international lounges x 1500) + milestone rewards already unlocked
+- Score = min(25, ratio x 25)
+
+2. Spend Alignment Score (25 points):
+- Check if currentSpend pattern matches the card's best categories
+- If currentSpend > 50% of annualFeeWaiverSpend: 25 points
+- If currentSpend > 25%: 15 points  
+- If currentSpend < 25%: 5 points
+- If no annual fee waiver: 20 points base
+
+3. Milestone Health Score (25 points):
+- If all milestones unlocked: 25 points
+- If on track (currentSpend / annualFeeWaiverSpend > 0.6): 20 points
+- If behind (currentSpend / annualFeeWaiverSpend > 0.3): 12 points
+- If very behind or no milestones: 5 points
+
+4. Rewards Efficiency Score (25 points):
+- Based on rewardPointValue: 
+- 1.00 per point = 25 points
+- 0.50 per point = 18 points
+- 0.30 per point = 12 points
+- 0.25 per point = 8 points
+- 0.20 per point = 5 points
+
+Final score = sum of all 4 components, rounded to nearest whole number
+
+Display the score on each card tile as follows:
+- A circular badge in the top right of each card showing the number score
+- Color coding: 
+  - 75-100: green circle with white number — "Excellent"
+  - 50-74: gold circle with dark number — "Good" 
+  - 25-49: orange circle with white number — "Underutilised"
+  - 0-24: red circle with white number — "Review this card"
+
+Below the score badge, add one line of smart insight text in small grey text:
+- If score < 40: "⚠️ Paying more in fees than you're earning in benefits"
+- If score 40-60: "📈 Moderate value — shift more [top category] spend here"
+- If score 61-80: "✅ Good card for your spend pattern"
+- If score > 80: "🏆 This card is working hard for you"
+
+Also add a new summary insight box at the top of the dashboard below the 3 metric boxes, with gold border, showing:
+- "Portfolio Health: X/100" where X is the average score across all cards
+- One line: "Your weakest card is [card name] at [score]/100 — it costs ₹[annual fee] but delivers only ₹[calculated benefit] in annual value"
+
+Keep all existing dashboard features intact, just add these new elements.
