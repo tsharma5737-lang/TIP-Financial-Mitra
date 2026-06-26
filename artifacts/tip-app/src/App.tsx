@@ -331,8 +331,23 @@ const s = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatRupee(val: number) {
-  return `₹${val.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return `₹${Math.round(val).toLocaleString("en-IN")}`;
 }
+
+// ─── Mock transactions for QR scan demo ───────────────────────────────────────
+
+const mockTransactions = [
+  { amount: 850,   merchant: "Swiggy",          category: "swiggy"    },
+  { amount: 12499, merchant: "Amazon",           category: "amazon"    },
+  { amount: 8200,  merchant: "Air Asia",         category: "travel"    },
+  { amount: 450,   merchant: "Zomato",           category: "zomato"    },
+  { amount: 2300,  merchant: "BigBasket",        category: "grocery"   },
+  { amount: 960,   merchant: "BookMyShow",       category: "other"     },
+  { amount: 6750,  merchant: "MakeMyTrip",       category: "travel"    },
+  { amount: 3000,  merchant: "Reliance Petrol",  category: "fuel"      },
+  { amount: 4500,  merchant: "Myntra",           category: "other"     },
+  { amount: 1199,  merchant: "Airtel",           category: "utilities" },
+];
 
 // ─── Bottom Nav ───────────────────────────────────────────────────────────────
 
@@ -401,45 +416,229 @@ function BottomNav({ active, onTabChange }: { active: Tab; onTabChange: (t: Tab)
 
 // ─── Pay Screen ───────────────────────────────────────────────────────────────
 
+function QRIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} width={36} height={36}>
+      {/* top-left corner */}
+      <path d="M3 9V5a2 2 0 0 1 2-2h4" strokeLinecap="round" />
+      {/* top-right corner */}
+      <path d="M15 3h4a2 2 0 0 1 2 2v4" strokeLinecap="round" />
+      {/* bottom-right corner */}
+      <path d="M21 15v4a2 2 0 0 1-2 2h-4" strokeLinecap="round" />
+      {/* bottom-left corner */}
+      <path d="M9 21H5a2 2 0 0 1-2-2v-4" strokeLinecap="round" />
+      {/* inner QR dots */}
+      <rect x="7" y="7" width="4" height="4" rx="0.5" fill="currentColor" stroke="none" />
+      <rect x="13" y="7" width="4" height="4" rx="0.5" fill="currentColor" stroke="none" />
+      <rect x="7" y="13" width="4" height="4" rx="0.5" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="15" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="17" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+type PaySuccess = {
+  merchant: string;
+  amount: number;
+  cardName: string;
+  saved: number;
+};
+
 function PayScreen() {
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount]     = useState("");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("dining");
-  const [results, setResults] = useState<ScoredCard[] | null>(null);
+  const [results, setResults]   = useState<ScoredCard[] | null>(null);
   const [pressing, setPressing] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
+
+  function runScore(amt: number, merch: string, cat: string) {
+    const scored = scoreCards({ amount: amt, merchant: merch || "Other", category: cat }) as ScoredCard[];
+    setResults(scored);
+  }
 
   function handleScore() {
     const parsed = parseFloat(amount);
     if (!parsed || parsed <= 0) return;
-    const scored = scoreCards({
-      amount: parsed,
-      merchant: merchant.trim() || "Other",
-      category,
-    }) as ScoredCard[];
-    setResults(scored);
+    runScore(parsed, merchant.trim(), category);
+  }
+
+  function handleScan() {
+    setScanning(true);
+    setResults(null);
+    setTimeout(() => {
+      const tx = mockTransactions[Math.floor(Math.random() * mockTransactions.length)];
+      setAmount(String(tx.amount));
+      setMerchant(tx.merchant);
+      setCategory(tx.category);
+      setScanning(false);
+      runScore(tx.amount, tx.merchant, tx.category);
+    }, 1500);
+  }
+
+  function handlePay() {
+    if (!best) return;
+    setPaySuccess({
+      merchant,
+      amount: parseFloat(amount),
+      cardName: best.card.name,
+      saved: best.totalValue,
+    });
+  }
+
+  function handleDone() {
+    setPaySuccess(null);
+    setResults(null);
+    setAmount("");
+    setMerchant("");
+    setCategory("dining");
   }
 
   const best = results?.[0] ?? null;
   const rest = results?.slice(1) ?? [];
 
+  // ── Payment success screen ─────────────────────────────────────────────────
+  if (paySuccess) {
+    return (
+      <>
+        <div style={s.header}>
+          <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={s.headerTitle}>TIP</span>
+            <span style={s.headerSub}>The Intelligent Payment</span>
+          </div>
+        </div>
+        <div style={{ ...s.scrollArea, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ textAlign: "center", padding: "40px 24px", width: "100%" }}>
+            {/* Green checkmark */}
+            <div style={{
+              width: 80, height: 80, borderRadius: "50%",
+              background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              margin: "0 auto 24px",
+              boxShadow: "0 0 32px #22c55e55",
+              animation: "pulse 1.5s ease-out",
+            }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} width={40} height={40}>
+                <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 6 }}>
+              Payment Successful!
+            </div>
+            <div style={{ color: "#7a9bcc", fontSize: 14, marginBottom: 28 }}>
+              Transaction complete
+            </div>
+
+            {/* Details card */}
+            <div style={{
+              background: NAVY_CARD, borderRadius: 16,
+              border: `1px solid #1e3a6a`, padding: "20px 18px",
+              textAlign: "left", marginBottom: 20,
+            }}>
+              {[
+                ["Merchant",  paySuccess.merchant],
+                ["Amount",    formatRupee(paySuccess.amount)],
+                ["Card Used", paySuccess.cardName],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                  <span style={{ color: "#7a9bcc", fontSize: 13, fontWeight: 500 }}>{k}</span>
+                  <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{v}</span>
+                </div>
+              ))}
+              <div style={{ height: 1, background: "#1e3a6a", margin: "4px 0 14px" }} />
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#7a9bcc", fontSize: 13, fontWeight: 500 }}>You saved with TIP</span>
+                <span style={{ color: GOLD, fontSize: 16, fontWeight: 800 }}>{formatRupee(paySuccess.saved)}</span>
+              </div>
+            </div>
+
+            <button style={s.btn} onClick={handleDone}>Done</button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Main pay screen ────────────────────────────────────────────────────────
   return (
     <>
       {/* Header */}
       <div style={s.header}>
-        <div style={s.logoBox}>
-          <span style={s.logoText}>TIP</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
           <span style={s.headerTitle}>TIP</span>
           <span style={s.headerSub}>The Intelligent Payment</span>
+        </div>
+        {/* Demo badge */}
+        <div style={{
+          background: "#1e2d40", borderRadius: 8, padding: "4px 8px",
+          border: "1px solid #2a3f58", alignSelf: "flex-start", marginTop: 2,
+        }}>
+          <span style={{ fontSize: 9, fontWeight: 600, color: "#7a9bcc", letterSpacing: 0.5 }}>
+            DEMO MODE
+          </span>
         </div>
       </div>
 
       <div style={s.scrollArea}>
         {/* Form */}
         <div style={s.section}>
-          <div style={s.sectionLabel}>⚡ Smart Pay</div>
+          <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
           <div style={s.formCard}>
+
+            {/* QR Scan button */}
+            <div
+              onClick={!scanning ? handleScan : undefined}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                justifyContent: "center", gap: 10,
+                background: scanning ? `${GOLD}18` : `${GOLD}10`,
+                border: `2px dashed ${scanning ? GOLD : GOLD_DIM}`,
+                borderRadius: 14, padding: "22px 16px",
+                cursor: scanning ? "default" : "pointer",
+                transition: "all 0.2s",
+                position: "relative" as const,
+                overflow: "hidden",
+              }}
+            >
+              {scanning ? (
+                <>
+                  <div style={{
+                    width: 56, height: 56, borderRadius: "50%",
+                    border: `3px solid ${GOLD}`,
+                    animation: "tipPulse 0.8s ease-in-out infinite",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: "50%",
+                      background: `${GOLD}44`,
+                      animation: "tipPulse 0.8s ease-in-out infinite 0.2s",
+                    }} />
+                  </div>
+                  <span style={{ color: GOLD, fontSize: 13, fontWeight: 700, letterSpacing: 1 }}>
+                    Scanning...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div style={{ color: GOLD }}><QRIcon /></div>
+                  <span style={{ color: GOLD, fontSize: 13, fontWeight: 700 }}>Tap to Scan &amp; Pay</span>
+                  <span style={{ color: "#7a9bcc", fontSize: 11 }}>Auto-fills merchant &amp; finds best card</span>
+                </>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, height: 1, background: "#1e3a6a" }} />
+              <span style={{ color: "#3a5a8a", fontSize: 11, fontWeight: 600 }}>OR ENTER MANUALLY</span>
+              <div style={{ flex: 1, height: 1, background: "#1e3a6a" }} />
+            </div>
+
+            {/* Amount */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Amount</label>
               <div style={s.amountRow}>
@@ -455,6 +654,7 @@ function PayScreen() {
               </div>
             </div>
 
+            {/* Merchant */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Merchant Name</label>
               <input
@@ -466,6 +666,7 @@ function PayScreen() {
               />
             </div>
 
+            {/* Category */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Category</label>
               <select
@@ -501,19 +702,36 @@ function PayScreen() {
         {/* Results */}
         {results && best && (
           <div style={s.resultsSection}>
-            <div style={s.bestLabel}>
-              <span>★</span>
-              <span>Best Card For This Payment</span>
-            </div>
-
-            <div style={s.bestCardWrapper}>
+            {/* Best card */}
+            <div style={{
+              ...s.bestCardWrapper,
+              boxShadow: `0 0 20px rgba(201,168,76,0.6), 0 8px 32px ${GOLD}22`,
+            }}>
               <div style={s.bestCardGlow} />
+
+              {/* Badge */}
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                background: `${GOLD}22`, borderRadius: 6, padding: "4px 10px",
+                marginBottom: 12,
+              }}>
+                <span style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.5 }}>
+                  ★ BEST CARD FOR THIS PAYMENT
+                </span>
+              </div>
+
               <div style={s.bestCardBank}>{best.card.bank} · {best.card.network}</div>
               <div style={s.bestCardName}>{best.card.name}</div>
+
               <div style={s.savingsRow}>
-                <span style={s.savingsLabel}>You save</span>
-                <span style={s.savingsAmount}>{formatRupee(best.totalValue)}</span>
+                <span style={{ ...s.savingsLabel, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span> You save
+                </span>
+                <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>
+                  {formatRupee(best.totalValue)}
+                </span>
               </div>
+
               <div style={s.breakdownBox}>
                 <div style={s.breakdownRow}>
                   <span style={s.breakdownKey}>Base Cashback</span>
@@ -543,8 +761,21 @@ function PayScreen() {
                   <span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupee(best.totalValue)}</span>
                 </div>
               </div>
+
+              {/* Pay button */}
+              <button
+                style={{
+                  ...s.btn,
+                  marginTop: 14,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}
+                onClick={handlePay}
+              >
+                Pay with this Card →
+              </button>
             </div>
 
+            {/* Other cards */}
             {rest.length > 0 && (
               <>
                 <div style={s.otherCardsLabel}>Other Cards</div>
@@ -568,12 +799,11 @@ function PayScreen() {
           </div>
         )}
 
-        {!results && (
+        {!results && !scanning && (
           <div style={{ padding: "40px 20px", textAlign: "center" }}>
             <div style={{
               width: 64, height: 64, borderRadius: 18,
-              background: `${GOLD}14`,
-              border: `1px solid ${GOLD}33`,
+              background: `${GOLD}14`, border: `1px solid ${GOLD}33`,
               display: "flex", alignItems: "center", justifyContent: "center",
               margin: "0 auto 16px",
             }}>
@@ -582,7 +812,7 @@ function PayScreen() {
               </svg>
             </div>
             <div style={{ color: "#7a9bcc", fontSize: 14, fontWeight: 500 }}>
-              Enter a transaction above to find your best card
+              Scan a QR code or enter a transaction above
             </div>
           </div>
         )}

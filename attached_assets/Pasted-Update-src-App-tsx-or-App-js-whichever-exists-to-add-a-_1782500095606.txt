@@ -1,0 +1,47 @@
+Update src/App.tsx (or App.js whichever exists) to add a Scan & Pay feature. Keep everything that exists currently but make these changes:
+
+1. Change the "SMART PAY" header to "SCAN & PAY" 
+
+2. Add a QR scanner button above the Amount field - a large centered button with a QR code icon (use a square with corner brackets design), gold colored, with text "Tap to Scan & Pay" below it
+
+3. Create an array of 10 mock transactions called mockTransactions:
+[
+  { amount: 850, merchant: "Swiggy", category: "dining" },
+  { amount: 12499, merchant: "Amazon", category: "amazon" },
+  { amount: 8200, merchant: "Air Asia", category: "travel" },
+  { amount: 450, merchant: "Zomato", category: "dining" },
+  { amount: 2300, merchant: "BigBasket", category: "grocery" },
+  { amount: 960, merchant: "BookMyShow", category: "bookmyshow" },
+  { amount: 6750, merchant: "MakeMyTrip", category: "travel" },
+  { amount: 3000, merchant: "Reliance Petrol", category: "fuel" },
+  { amount: 4500, merchant: "Myntra", category: "myntra" },
+  { amount: 1199, merchant: "Airtel", category: "utilities" }
+]
+
+4. When the QR scan button is tapped:
+- Show a brief scanning animation for 1.5 seconds (a pulsing gold circle with "Scanning..." text)
+- Randomly pick one transaction from mockTransactions
+- Auto-fill the amount, merchant and category fields with that transaction
+- Automatically fire the scoreCards engine and show results instantly
+- No need to click "Find Best Card" separately - it happens automatically after scan
+
+5. The manual input fields should still work as before for anyone who types manually
+
+6. Round ALL rupee values in results to whole numbers - no decimals anywhere. Use Math.round() on every value before displaying
+
+7. Make the top recommended card more dramatic:
+- Add a glowing gold border effect (box-shadow: 0 0 20px rgba(201, 168, 76, 0.6))
+- Add a "★ BEST CARD FOR THIS PAYMENT" badge in gold at the very top of the result card
+- Make the savings amount font size larger (2rem minimum)
+- Add a green checkmark before "You save"
+
+8. Add a "Demo Mode — Mock Data" small grey badge in the header so investors know this is a prototype
+
+9. After the card recommendation shows, add a gold "Pay with this Card →" button at the bottom of the top card. When clicked show a mock payment success screen with:
+- Green checkmark animation
+- "Payment Successful!" in white
+- Transaction details: merchant, amount, card used
+- "You saved ₹X with TIP" in gold
+- "Done" button that returns to the scan screen
+
+Keep all existing functionality intact. Same dark navy and gold theme.

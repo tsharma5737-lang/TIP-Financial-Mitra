@@ -319,6 +319,11 @@
     100% { background-position: 0% 50%; }
   }
 
+  @keyframes tipPulse {
+    0%, 100% { transform: scale(1);   opacity: 1;   }
+    50%       { transform: scale(1.18); opacity: 0.6; }
+  }
+
   /* Mobile-style constrained layout */
   .mobile-container {
     max-width: 430px;
