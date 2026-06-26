@@ -150,6 +150,50 @@ const weakest = CARDS.length
 const weakestScore    = weakest ? SCORES[weakest.id] : 0;
 const weakestBenefits = weakest ? Math.round(calcBenefits(weakest)) : 0;
 
+// ─── Annualised Benefit Calculator ──────────────────────────────────────────
+
+function calculateAnnualisedBenefit(card) {
+  // Extrapolate from 6-month data to 12 months
+  const annualSpend = (card.currentSpend / 6) * 12;
+
+  // Top cashback rate across all categories
+  const topCatRate = Math.max(
+    ...Object.values(card.categories).map((c) => c.cashback)
+  );
+
+  // 60% of annual spend in best categories
+  const annualCashback = (annualSpend * 0.6 * topCatRate) / 100;
+
+  // 40% earns base reward points
+  const annualPoints = annualSpend * 0.4 * 0.01 * card.rewardPointValue;
+
+  // Lounge access value
+  const annualLounge =
+    (card.loungeAccess?.domestic || 0) * 500 +
+    (card.loungeAccess?.international || 0) * 1500;
+
+  // Milestone value for milestones unlocked at annual spend level
+  const annualMilestone = (card.milestones || [])
+    .filter((m) => m.spendTarget <= annualSpend)
+    .reduce((s, m) => s + (m.rewardValue || 0), 0);
+
+  // Quarterly offers × 4
+  const annualOffer =
+    (card.activeOffers || []).reduce((s, o) => s + (o.maxCashback || 0), 0) * 4;
+
+  const grossBenefit = annualCashback + annualPoints + annualLounge + annualMilestone + annualOffer;
+  const netBenefit   = grossBenefit - card.annualFee;
+  const ratio        = card.annualFee === 0 ? null : grossBenefit / card.annualFee;
+
+  return { annualSpend, annualCashback, annualPoints, annualLounge, annualMilestone, annualOffer, grossBenefit, netBenefit, ratio };
+}
+
+// Pre-compute annualised benefits for all cards
+const ANNUAL = Object.fromEntries(CARDS.map((c) => [c.id, calculateAnnualisedBenefit(c)]));
+const bestAnnual  = CARDS.length ? CARDS.reduce((a, b) => ANNUAL[a.id].netBenefit >= ANNUAL[b.id].netBenefit ? a : b) : null;
+const worstAnnual = CARDS.length ? CARDS.reduce((a, b) => ANNUAL[a.id].netBenefit <= ANNUAL[b.id].netBenefit ? a : b) : null;
+const maxNetBenefit = CARDS.length ? Math.max(...CARDS.map((c) => ANNUAL[c.id].netBenefit)) : 1;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatRupee(val, decimals = 0) {
@@ -309,6 +353,41 @@ const s = {
     padding: "4px 8px", fontSize: 10, fontWeight: 600, color: col,
     display: "flex", alignItems: "center", gap: 4, letterSpacing: 0.1,
   }),
+
+  // Annual benefit tile additions
+  annualRow: { paddingLeft: 8, marginTop: 8, display: "flex", flexDirection: "column", gap: 3 },
+  annualNet: { fontSize: 11, fontWeight: 700, color: GOLD },
+  annualRecovery: { fontSize: 11, fontWeight: 600, color: "#4ade80" },
+  annualWarning: { fontSize: 11, fontWeight: 600, color: "#f87171" },
+
+  // Annualised benefit analysis section
+  analysisBox: {
+    margin: "0 16px 4px",
+    background: "#0a1628",
+    border: `1px solid #1e3a6a`,
+    borderRadius: 14,
+    padding: "14px 14px 10px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  analysisTitle: { fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: "-0.2px" },
+  analysisSub:   { fontSize: 10, color: "#4a6a9a", marginTop: 2, fontWeight: 500 },
+  barRow: {
+    display: "flex", flexDirection: "column", gap: 4,
+  },
+  barLabel: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  barCardName: { fontSize: 11, fontWeight: 700, color: "#c8daf0", maxWidth: "55%" },
+  barAmount:   { fontSize: 11, fontWeight: 800, color: GOLD },
+  barTrack:    { height: 8, background: "#0D1A2E", borderRadius: 99, overflow: "hidden" },
+  barFill: (pct, negative) => ({
+    height: "100%",
+    width: `${Math.max(pct, 2)}%`,
+    background: negative ? "#f87171" : `linear-gradient(90deg, ${GOLD_DIM}, ${GOLD})`,
+    borderRadius: 99,
+    transition: "width 0.5s ease",
+  }),
+  barSub: { fontSize: 9, color: "#4a6a9a", fontWeight: 500, marginTop: 1 },
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -324,6 +403,9 @@ function MetricBox({ label, value, sub, color }) {
 }
 
 function PortfolioHealth() {
+  const bestNet  = bestAnnual  ? Math.round(ANNUAL[bestAnnual.id].netBenefit)  : 0;
+  const worstNet = worstAnnual ? Math.round(ANNUAL[worstAnnual.id].netBenefit) : 0;
+
   return (
     <div style={s.healthBox}>
       <div style={s.healthTop}>
@@ -355,6 +437,76 @@ function PortfolioHealth() {
           " — review your spend pattern to extract more value"
         )}
       </span>
+
+      {bestAnnual && (
+        <span style={s.healthInsight}>
+          <span style={{ color: "#4ade80", fontWeight: 700 }}>★ Best annual value: </span>
+          <span style={s.healthInsightBold}>{bestAnnual.name}</span>
+          {" — "}
+          <span style={{ color: "#4ade80", fontWeight: 700 }}>{formatRupee(bestNet)} net benefit/yr</span>
+        </span>
+      )}
+
+      {worstAnnual && worstNet < 0 && (
+        <span style={s.healthInsight}>
+          <span style={{ color: "#f87171", fontWeight: 700 }}>⚠ Worst annual value: </span>
+          <span style={s.healthInsightBold}>{worstAnnual.name}</span>
+          {" — costs "}
+          <span style={{ color: "#f87171", fontWeight: 700 }}>{formatRupee(Math.abs(worstNet))} more than it gives</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AnnualisedBenefitSection() {
+  // Sort cards by net benefit descending for ranking
+  const sorted = [...CARDS].sort((a, b) => ANNUAL[b.id].netBenefit - ANNUAL[a.id].netBenefit);
+  // Scale bar widths: use max of positive net benefits; if all negative use max gross
+  const scaleMax = maxNetBenefit > 0 ? maxNetBenefit : 1;
+
+  return (
+    <div style={{ padding: "0 0 4px" }}>
+      <div style={{ padding: "12px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={s.sectionTitle}>📊 Annualised Benefit Analysis</span>
+      </div>
+
+      <div style={s.analysisBox}>
+        <div>
+          <div style={s.analysisTitle}>12-Month Projected Net Benefit</div>
+          <div style={s.analysisSub}>Based on your current spend pattern · Updated monthly</div>
+        </div>
+
+        {sorted.map((card) => {
+          const ab  = ANNUAL[card.id];
+          const net = Math.round(ab.netBenefit);
+          const gross = Math.round(ab.grossBenefit);
+          const negative = net < 0;
+          const barPct = negative
+            ? (Math.abs(net) / scaleMax) * 100
+            : (net / scaleMax) * 100;
+
+          return (
+            <div key={card.id} style={s.barRow}>
+              <div style={s.barLabel}>
+                <span style={s.barCardName}>{card.name}</span>
+                <span style={{ ...s.barAmount, color: negative ? "#f87171" : GOLD }}>
+                  {negative ? `−${formatRupee(Math.abs(net))}` : formatRupee(net)}
+                </span>
+              </div>
+              <div style={s.barTrack}>
+                <div style={s.barFill(barPct, negative)} />
+              </div>
+              <div style={s.barSub}>
+                {negative
+                  ? <span style={{ color: "#f87171" }}>⚠ Review this card — fee exceeds benefits</span>
+                  : `${formatRupee(gross)} gross − ${formatRupee(card.annualFee)} fee = ${formatRupee(net)} net`
+                }
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -452,6 +604,29 @@ function CardTile({ card }) {
           <span>{card.annualFee === 0 ? "No annual fee" : `₹${card.annualFee}/yr fee`}</span>
         </div>
       </div>
+
+      {/* Annual benefit summary */}
+      {(() => {
+        const ab  = ANNUAL[card.id];
+        const net = Math.round(ab.netBenefit);
+        const negative = net < 0;
+        return (
+          <div style={s.annualRow}>
+            {negative ? (
+              <span style={s.annualWarning}>⚠️ Fee exceeds benefits — consider cancelling</span>
+            ) : (
+              <>
+                <span style={s.annualNet}>Annual net benefit: {formatRupee(net)}</span>
+                <span style={ab.ratio === null ? { fontSize: 11, fontWeight: 600, color: "#4ade80" } : s.annualRecovery}>
+                  {ab.ratio === null
+                    ? "No annual fee — pure benefit"
+                    : `Fee recovery: ${ab.ratio.toFixed(1)}× your annual fee in benefits`}
+                </span>
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -487,6 +662,9 @@ export default function Dashboard() {
 
       {/* Portfolio health insight */}
       <PortfolioHealth />
+
+      {/* Annualised benefit analysis */}
+      <AnnualisedBenefitSection />
 
       {/* Card list */}
       <div style={s.sectionHeader}>

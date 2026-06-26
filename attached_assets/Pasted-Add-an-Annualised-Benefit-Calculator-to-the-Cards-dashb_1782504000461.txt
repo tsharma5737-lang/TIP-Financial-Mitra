@@ -1,0 +1,42 @@
+Add an Annualised Benefit Calculator to the Cards dashboard in src/Dashboard.js. Keep everything existing intact and add the following:
+
+1. Create a function called calculateAnnualisedBenefit(card) that works as follows:
+
+For each card, calculate a full 12-month projected benefit using this logic:
+
+- Monthly spend estimate = card.currentSpend / 6 (assuming 6 months of data)
+- Annual spend estimate = monthly spend x 12
+
+- For each category in the card, identify the top 2 categories by cashback rate
+- Annual cashback value = annual spend x 0.6 x top category rate / 100 (60% of spend assumed in best categories)
+- Annual reward points value = annual spend x 0.4 x 0.01 x card.rewardPointValue (remaining 40% earns base points)
+- Annual lounge value = (card.loungeAccess.domestic x 500) + (card.loungeAccess.international x 1500)
+- Annual milestone value = sum of all milestone rewardValues where spendTarget <= annual spend estimate
+- Annual offer value = sum of all activeOffers maxCashback values x 4 (quarterly offers assumed)
+- Total gross annual benefit = cashback + points + lounge + milestone + offer values
+- Net annual benefit = total gross benefit - card.annualFee
+- Benefit to fee ratio = total gross benefit / card.annualFee (show as "X times" your fee back)
+- If annualFee is 0, ratio shows as "No fee — pure benefit"
+
+2. Add a new section called "ANNUALISED BENEFIT ANALYSIS" between the Portfolio Health box and the Card Portfolio section
+
+This section shows a horizontal ranked bar chart visual using div widths:
+- Title: "12-Month Projected Net Benefit" 
+- Subtitle: "Based on your current spend pattern · Updated monthly"
+- For each card show a row with:
+  - Card name on the left
+  - A gold filled bar whose width is proportional to net annual benefit (widest bar = 100% width)
+  - Net benefit amount in gold on the right (e.g. "₹9,700")
+  - Below the bar in small text: "₹X gross benefit − ₹Y fee = ₹Z net" 
+  - If net benefit is negative show bar in red and label "Review this card"
+
+3. Update each individual card tile to show two new data points below the existing milestone info:
+- "Annual net benefit: ₹X" in gold
+- "Fee recovery: Xt your annual fee in benefits" in green (or "No annual fee" if fee is 0)
+- If net benefit is negative, show "⚠️ Fee exceeds benefits — consider cancelling" in red
+
+4. Update the Portfolio Health insight box to also say:
+- "Best annual value card: [card name] — ₹X net benefit per year"
+- "Worst annual value card: [card name] — costs ₹X more than it gives"
+
+Use the same dark navy and gold theme. Keep all existing features working perfectly.
