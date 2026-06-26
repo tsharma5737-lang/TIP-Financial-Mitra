@@ -5,6 +5,8 @@ import { scoreCards } from "./engine/scoringEngine.js";
 import Dashboard from "./Dashboard.jsx";
 // @ts-ignore
 import Rewards from "./Rewards.jsx";
+// @ts-ignore
+import Onboarding from "./Onboarding.jsx";
 
 const NAVY = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -622,7 +624,19 @@ function PlaceholderScreen({ icon, title, sub }: { icon: React.ReactNode; title:
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [onboarded, setOnboarded] = useState<boolean>(
+    () => typeof window !== "undefined" && localStorage.getItem("tip_onboarded") === "1"
+  );
   const [activeTab, setActiveTab] = useState<Tab>("pay");
+
+  function completeOnboarding() {
+    localStorage.setItem("tip_onboarded", "1");
+    setOnboarded(true);
+  }
+
+  if (!onboarded) {
+    return <Onboarding onComplete={completeOnboarding} />;
+  }
 
   function renderScreen() {
     switch (activeTab) {
