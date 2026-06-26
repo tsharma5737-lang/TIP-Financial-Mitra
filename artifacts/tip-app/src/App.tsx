@@ -1,6 +1,8 @@
 import { useState } from "react";
 // @ts-ignore
 import { scoreCards } from "./engine/scoringEngine.js";
+// @ts-ignore
+import Dashboard from "./Dashboard.jsx";
 
 const NAVY = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -10,17 +12,11 @@ const GOLD_LIGHT = "#e0c06a";
 const GOLD_DIM = "#8a6f32";
 
 const CATEGORIES = [
-  "dining",
-  "grocery",
-  "amazon",
-  "flipkart",
-  "swiggy",
-  "zomato",
-  "travel",
-  "fuel",
-  "utilities",
-  "other",
+  "dining", "grocery", "amazon", "flipkart", "swiggy",
+  "zomato", "travel", "fuel", "utilities", "other",
 ];
+
+type Tab = "pay" | "cards" | "rewards" | "profile";
 
 type ScoredCard = {
   card: {
@@ -39,6 +35,8 @@ type ScoredCard = {
   breakdown: string;
   lossVsBest: number;
 };
+
+// ─── Shared styles ────────────────────────────────────────────────────────────
 
 const s = {
   app: {
@@ -66,6 +64,7 @@ const s = {
     display: "flex",
     alignItems: "center",
     gap: 12,
+    flexShrink: 0,
   },
   logoBox: {
     width: 44,
@@ -84,10 +83,6 @@ const s = {
     color: NAVY,
     letterSpacing: "-0.5px",
   },
-  headerText: {
-    display: "flex",
-    flexDirection: "column" as const,
-  },
   headerTitle: {
     fontSize: 20,
     fontWeight: 800,
@@ -104,9 +99,7 @@ const s = {
   },
 
   // Form section
-  section: {
-    padding: "20px 16px 0",
-  },
+  section: { padding: "20px 16px 0" },
   sectionLabel: {
     fontSize: 11,
     fontWeight: 700,
@@ -204,9 +197,7 @@ const s = {
   },
 
   // Results
-  resultsSection: {
-    padding: "20px 16px 0",
-  },
+  resultsSection: { padding: "20px 16px 0" },
   bestLabel: {
     fontSize: 10,
     fontWeight: 800,
@@ -259,17 +250,8 @@ const s = {
     gap: 6,
     marginBottom: 14,
   },
-  savingsLabel: {
-    fontSize: 12,
-    color: "#7a9bcc",
-    fontWeight: 500,
-  },
-  savingsAmount: {
-    fontSize: 30,
-    fontWeight: 900,
-    color: "#4ade80",
-    letterSpacing: "-1px",
-  },
+  savingsLabel: { fontSize: 12, color: "#7a9bcc", fontWeight: 500 },
+  savingsAmount: { fontSize: 30, fontWeight: 900, color: "#4ade80", letterSpacing: "-1px" },
   breakdownBox: {
     background: "#0a1628",
     borderRadius: 10,
@@ -283,23 +265,9 @@ const s = {
     justifyContent: "space-between",
     alignItems: "center",
   },
-  breakdownKey: {
-    fontSize: 12,
-    color: "#7a9bcc",
-    fontWeight: 500,
-  },
-  breakdownVal: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#fff",
-  },
-  breakdownDivider: {
-    height: 1,
-    background: "#1e3a6a",
-    margin: "2px 0",
-  },
-
-  // Other cards
+  breakdownKey: { fontSize: 12, color: "#7a9bcc", fontWeight: 500 },
+  breakdownVal: { fontSize: 12, fontWeight: 700, color: "#fff" },
+  breakdownDivider: { height: 1, background: "#1e3a6a", margin: "2px 0" },
   otherCardsLabel: {
     fontSize: 11,
     fontWeight: 700,
@@ -319,43 +287,11 @@ const s = {
     alignItems: "center",
     justifyContent: "space-between",
   },
-  otherCardLeft: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 2,
-  },
-  otherCardRank: {
-    fontSize: 10,
-    fontWeight: 700,
-    color: GOLD_DIM,
-    letterSpacing: 1,
-  },
-  otherCardName: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#fff",
-  },
-  otherCardLoss: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: "#f87171",
-    marginTop: 1,
-  },
-  otherCardRight: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "flex-end",
-    gap: 2,
-  },
-  otherCardTotal: {
-    fontSize: 16,
-    fontWeight: 800,
-    color: "#4ade80",
-  },
-  otherCardTotalLabel: {
-    fontSize: 10,
-    color: "#7a9bcc",
-  },
+  otherCardRank: { fontSize: 10, fontWeight: 700, color: GOLD_DIM, letterSpacing: 1 },
+  otherCardName: { fontSize: 14, fontWeight: 700, color: "#fff" },
+  otherCardLoss: { fontSize: 11, fontWeight: 600, color: "#f87171", marginTop: 1 },
+  otherCardTotal: { fontSize: 16, fontWeight: 800, color: "#4ade80" },
+  otherCardTotalLabel: { fontSize: 10, color: "#7a9bcc" },
 
   // Bottom nav
   bottomNav: {
@@ -380,94 +316,86 @@ const s = {
     gap: 4,
     cursor: "pointer",
     flex: 1,
+    userSelect: "none" as const,
+    WebkitTapHighlightColor: "transparent",
   },
-  navIcon: {
-    width: 24,
-    height: 24,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navLabel: {
-    fontSize: 10,
-    fontWeight: 600,
-    letterSpacing: 0.5,
-  },
+  navLabel: { fontSize: 10, fontWeight: 600, letterSpacing: 0.5 },
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatRupee(val: number) {
   return `₹${val.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-function NavIcon({ active, children }: { active?: boolean; children: React.ReactNode }) {
-  return (
-    <div style={{ ...s.navItem }}>
-      <div style={{ ...s.navIcon, color: active ? GOLD : "#3a5a8a" }}>{children}</div>
-      {children}
-    </div>
-  );
-}
+// ─── Bottom Nav ───────────────────────────────────────────────────────────────
 
-function BottomNav({ active }: { active: string }) {
-  const items = [
-    {
-      id: "pay",
-      label: "Pay",
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
-          <rect x="2" y="5" width="20" height="14" rx="3" />
-          <path d="M2 10h20" />
-        </svg>
-      ),
-    },
-    {
-      id: "cards",
-      label: "Cards",
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
-          <rect x="1" y="4" width="22" height="16" rx="2" />
-          <path d="M1 10h22" />
-        </svg>
-      ),
-    },
-    {
-      id: "rewards",
-      label: "Rewards",
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-        </svg>
-      ),
-    },
-    {
-      id: "profile",
-      label: "Profile",
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
-          <circle cx="12" cy="8" r="4" />
-          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-        </svg>
-      ),
-    },
-  ];
+const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "pay",
+    label: "Pay",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
+        <rect x="2" y="5" width="20" height="14" rx="3" />
+        <path d="M2 10h20" />
+      </svg>
+    ),
+  },
+  {
+    id: "cards",
+    label: "Cards",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
+        <rect x="1" y="4" width="22" height="16" rx="2" />
+        <path d="M1 10h22" />
+        <circle cx="6" cy="15" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    id: "rewards",
+    label: "Rewards",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+      </svg>
+    ),
+  },
+  {
+    id: "profile",
+    label: "Profile",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={22} height={22}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+      </svg>
+    ),
+  },
+];
 
+function BottomNav({ active, onTabChange }: { active: Tab; onTabChange: (t: Tab) => void }) {
   return (
     <div style={s.bottomNav}>
-      {items.map((item) => (
-        <div key={item.id} style={s.navItem}>
-          <div style={{ ...s.navIcon, color: active === item.id ? GOLD : "#3a5a8a" }}>
-            {item.icon}
+      {NAV_ITEMS.map((item) => {
+        const isActive = active === item.id;
+        return (
+          <div key={item.id} style={s.navItem} onClick={() => onTabChange(item.id)}>
+            <div style={{ color: isActive ? GOLD : "#3a5a8a", display: "flex" }}>
+              {item.icon}
+            </div>
+            <span style={{ ...s.navLabel, color: isActive ? GOLD : "#3a5a8a" }}>
+              {item.label}
+            </span>
           </div>
-          <span style={{ ...s.navLabel, color: active === item.id ? GOLD : "#3a5a8a" }}>
-            {item.label}
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-export default function App() {
+// ─── Pay Screen ───────────────────────────────────────────────────────────────
+
+function PayScreen() {
   const [amount, setAmount] = useState("");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("dining");
@@ -489,24 +417,23 @@ export default function App() {
   const rest = results?.slice(1) ?? [];
 
   return (
-    <div style={s.app}>
+    <>
       {/* Header */}
       <div style={s.header}>
         <div style={s.logoBox}>
           <span style={s.logoText}>TIP</span>
         </div>
-        <div style={s.headerText}>
+        <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={s.headerTitle}>TIP</span>
           <span style={s.headerSub}>The Intelligent Payment</span>
         </div>
       </div>
 
       <div style={s.scrollArea}>
-        {/* Smart Pay Form */}
+        {/* Form */}
         <div style={s.section}>
           <div style={s.sectionLabel}>⚡ Smart Pay</div>
           <div style={s.formCard}>
-            {/* Amount */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Amount</label>
               <div style={s.amountRow}>
@@ -522,7 +449,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Merchant */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Merchant Name</label>
               <input
@@ -534,7 +460,6 @@ export default function App() {
               />
             </div>
 
-            {/* Category */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Category</label>
               <select
@@ -550,7 +475,6 @@ export default function App() {
               </select>
             </div>
 
-            {/* CTA */}
             <button
               style={{
                 ...s.btn,
@@ -571,7 +495,6 @@ export default function App() {
         {/* Results */}
         {results && best && (
           <div style={s.resultsSection}>
-            {/* Best card */}
             <div style={s.bestLabel}>
               <span>★</span>
               <span>Best Card For This Payment</span>
@@ -581,12 +504,10 @@ export default function App() {
               <div style={s.bestCardGlow} />
               <div style={s.bestCardBank}>{best.card.bank} · {best.card.network}</div>
               <div style={s.bestCardName}>{best.card.name}</div>
-
               <div style={s.savingsRow}>
                 <span style={s.savingsLabel}>You save</span>
                 <span style={s.savingsAmount}>{formatRupee(best.totalValue)}</span>
               </div>
-
               <div style={s.breakdownBox}>
                 <div style={s.breakdownRow}>
                   <span style={s.breakdownKey}>Base Cashback</span>
@@ -618,22 +539,19 @@ export default function App() {
               </div>
             </div>
 
-            {/* Other cards */}
             {rest.length > 0 && (
               <>
                 <div style={s.otherCardsLabel}>Other Cards</div>
                 {rest.map((r, i) => (
                   <div key={r.card.id} style={s.otherCard}>
-                    <div style={s.otherCardLeft}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       <span style={s.otherCardRank}>#{i + 2} · {r.card.bank}</span>
                       <span style={s.otherCardName}>{r.card.name}</span>
                       {r.lossVsBest > 0 && (
-                        <span style={s.otherCardLoss}>
-                          {formatRupee(r.lossVsBest)} less than best
-                        </span>
+                        <span style={s.otherCardLoss}>{formatRupee(r.lossVsBest)} less than best</span>
                       )}
                     </div>
-                    <div style={s.otherCardRight}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                       <span style={s.otherCardTotal}>{formatRupee(r.totalValue)}</span>
                       <span style={s.otherCardTotalLabel}>total value</span>
                     </div>
@@ -644,12 +562,11 @@ export default function App() {
           </div>
         )}
 
-        {/* Empty state */}
         {!results && (
           <div style={{ padding: "40px 20px", textAlign: "center" }}>
             <div style={{
               width: 64, height: 64, borderRadius: 18,
-              background: `linear-gradient(135deg, ${GOLD}22 0%, ${GOLD}11 100%)`,
+              background: `${GOLD}14`,
               border: `1px solid ${GOLD}33`,
               display: "flex", alignItems: "center", justifyContent: "center",
               margin: "0 auto 16px",
@@ -664,8 +581,80 @@ export default function App() {
           </div>
         )}
       </div>
+    </>
+  );
+}
 
-      <BottomNav active="pay" />
+// ─── Placeholder screens ──────────────────────────────────────────────────────
+
+function PlaceholderScreen({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
+  return (
+    <>
+      <div style={s.header}>
+        <div style={s.logoBox}>
+          <span style={s.logoText}>TIP</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <span style={s.headerTitle}>TIP</span>
+          <span style={s.headerSub}>The Intelligent Payment</span>
+        </div>
+      </div>
+      <div style={{ ...s.scrollArea, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center", padding: "40px 24px" }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 18,
+            background: `${GOLD}14`, border: `1px solid ${GOLD}33`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 16px",
+          }}>
+            {icon}
+          </div>
+          <div style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{title}</div>
+          <div style={{ color: "#7a9bcc", fontSize: 13 }}>{sub}</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Root App ─────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<Tab>("pay");
+
+  function renderScreen() {
+    switch (activeTab) {
+      case "pay":
+        return <PayScreen />;
+      case "cards":
+        return (
+          <div style={s.scrollArea}>
+            <Dashboard />
+          </div>
+        );
+      case "rewards":
+        return (
+          <PlaceholderScreen
+            icon={<svg viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth={1.5} width={28} height={28}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>}
+            title="Rewards"
+            sub="Your rewards tracker is coming soon"
+          />
+        );
+      case "profile":
+        return (
+          <PlaceholderScreen
+            icon={<svg viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth={1.5} width={28} height={28}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>}
+            title="Profile"
+            sub="Your profile settings are coming soon"
+          />
+        );
+    }
+  }
+
+  return (
+    <div style={s.app}>
+      {renderScreen()}
+      <BottomNav active={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }
