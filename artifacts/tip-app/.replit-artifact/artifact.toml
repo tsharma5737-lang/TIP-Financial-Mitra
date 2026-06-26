@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "TIP - The Intelligent Payment"
+version = "1.0.0"
+id = "artifacts/tip-app"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25447
+
+[services.development]
+run = "pnpm --filter @workspace/tip-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tip-app", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tip-app/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25447"
+BASE_PATH = "/"
