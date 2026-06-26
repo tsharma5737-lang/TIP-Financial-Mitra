@@ -7,6 +7,8 @@ import Dashboard from "./Dashboard.jsx";
 import Rewards from "./Rewards.jsx";
 // @ts-ignore
 import Onboarding from "./Onboarding.jsx";
+// @ts-ignore
+import PitchSummary from "./PitchSummary.jsx";
 
 const NAVY = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -656,11 +658,9 @@ export default function App() {
         );
       case "profile":
         return (
-          <PlaceholderScreen
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth={1.5} width={28} height={28}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>}
-            title="Profile"
-            sub="Your profile settings are coming soon"
-          />
+          <div style={s.scrollArea}>
+            <PitchSummary />
+          </div>
         );
     }
   }
