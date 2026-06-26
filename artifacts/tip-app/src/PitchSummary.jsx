@@ -448,7 +448,7 @@ export default function PitchSummary() {
           <span>Investor Summary · Seed Round · Confidential</span>
         </div>
         <div style={s.headerTitle}>
-          <span style={s.titleGold}>TIP</span> — The Intelligent<br />Payment
+          <span style={s.titleGold}>TIP</span> — Your Financial Mitra
         </div>
         <div style={s.headerTagline}>"Spending se pehle TIP dekha kya?"</div>
         <div style={s.headerBadgeRow}>

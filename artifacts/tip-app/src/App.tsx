@@ -506,7 +506,7 @@ function PayScreen() {
           <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span style={s.headerTitle}>TIP</span>
-            <span style={s.headerSub}>The Intelligent Payment</span>
+            <span style={s.headerSub}>Your Financial Mitra</span>
           </div>
         </div>
         <div style={{ ...s.scrollArea, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -570,7 +570,7 @@ function PayScreen() {
         <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
         <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
           <span style={s.headerTitle}>TIP</span>
-          <span style={s.headerSub}>The Intelligent Payment</span>
+          <span style={s.headerSub}>Your Financial Mitra</span>
         </div>
         {/* Demo badge */}
         <div style={{
@@ -832,7 +832,7 @@ function PlaceholderScreen({ icon, title, sub }: { icon: React.ReactNode; title:
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={s.headerTitle}>TIP</span>
-          <span style={s.headerSub}>The Intelligent Payment</span>
+          <span style={s.headerSub}>Your Financial Mitra</span>
         </div>
       </div>
       <div style={{ ...s.scrollArea, display: "flex", alignItems: "center", justifyContent: "center" }}>

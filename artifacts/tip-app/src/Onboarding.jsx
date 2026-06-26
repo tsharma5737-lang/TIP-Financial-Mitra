@@ -357,7 +357,7 @@ function HeroSlide({ onNext }) {
         </h1>
 
         <p style={s.heroSub}>
-          India's first intelligent payment advisor — always pay with the right card.
+          Your Financial Mitra — always pay with the right card
         </p>
       </div>
 
@@ -386,7 +386,7 @@ function HeroSlide({ onNext }) {
 const FEATURE_SLIDES = [
   {
     label: "Step 1 of 2",
-    heading: "Always pay with\nthe right card",
+    heading: "Your Mitra knows every\ncard's superpower",
     items: [
       { icon: "★", bold: "Real-time recommendation", rest: " at every single payment" },
       { icon: "₹", bold: "Savings in actual rupees,", rest: " not vague percentages" },
@@ -395,7 +395,7 @@ const FEATURE_SLIDES = [
   },
   {
     label: "Step 2 of 2",
-    heading: "Your money,\nfully optimised",
+    heading: "Your money, your Mitra,\nfully optimised",
     items: [
       { icon: "📊", bold: "Track savings and losses", rest: " across all your cards" },
       { icon: "🎯", bold: "Never miss a milestone", rest: " or an expiring reward" },
