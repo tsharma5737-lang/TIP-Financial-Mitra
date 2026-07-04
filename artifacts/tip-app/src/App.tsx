@@ -450,16 +450,40 @@ function toEngineCategory(vpa: string, humanCat: string): string {
   return map[humanCat] ?? "other";
 }
 
+// Turns "swiggy.rzp" → "Swiggy Rzp", strips @bank suffix
+function cleanMerchantName(raw: string): string {
+  const base = raw.split("@")[0].replace(/[._\-]+/g, " ").trim();
+  return base
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function parseUpiQr(qrText: string) {
   try {
-    const url = new URL(qrText);
+    const trimmed = qrText.trim();
+    // Normalise upi:// scheme (case-insensitive) so URL() can parse params
+    const normalised = /^upi:\/\//i.test(trimmed)
+      ? trimmed.replace(/^upi:\/\//i, "https://upi/")
+      : trimmed;
+    const url = new URL(normalised);
+    const vpa = url.searchParams.get("pa") ?? trimmed;
+    const pn  = (url.searchParams.get("pn") ?? "").trim();
     return {
-      vpa:    url.searchParams.get("pa") ?? qrText,
-      name:   url.searchParams.get("pn") ?? "",
+      vpa,
+      merchantName: pn || cleanMerchantName(vpa),
       amount: url.searchParams.get("am") ?? "",
+      note:   url.searchParams.get("tn") ?? "",
     };
   } catch {
-    return { vpa: qrText, name: "", amount: "" };
+    const trimmed = qrText.trim();
+    return {
+      vpa: trimmed,
+      merchantName: cleanMerchantName(trimmed) || trimmed,
+      amount: "",
+      note: "",
+    };
   }
 }
 
@@ -576,10 +600,10 @@ function PayScreen() {
 
   // Called when html5-qrcode successfully reads a QR
   function handleQrScanned(raw: string) {
-    const { vpa, name, amount: qrAmt } = parseUpiQr(raw);
+    const { vpa, merchantName, amount: qrAmt } = parseUpiQr(raw);
     const cat = getVpaCategory(vpa);
     setScannedVpa(vpa);
-    setScannedName(name);
+    setScannedName(merchantName);
     setDetectedCat(cat);
     setSelectedHuman(cat ?? HUMAN_CATEGORIES[0]);
     setConfirmAmount(qrAmt);
@@ -802,12 +826,12 @@ function PayScreen() {
             <div style={s.formCard}>
 
               {/* Scanned badge */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 10, padding: "10px 14px" }}>
-                <span style={{ fontSize: 18 }}>✅</span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ color: "#4ade80", fontSize: 12, fontWeight: 700 }}>QR Scanned Successfully</span>
-                  <span style={{ color: "#7a9bcc", fontSize: 11 }}>{scannedName || scannedVpa}</span>
-                  {scannedName && <span style={{ color: "#4a6a8a", fontSize: 10 }}>{scannedVpa}</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 10, padding: "12px 14px" }}>
+                <span style={{ fontSize: 22, lineHeight: 1 }}>✅</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>QR Scanned Successfully</span>
+                  <span style={{ color: "#ffffff", fontSize: 16, fontWeight: 800 }}>{scannedName || scannedVpa}</span>
+                  {scannedVpa && <span style={{ color: "#4a6a8a", fontSize: 10 }}>{scannedVpa}</span>}
                 </div>
               </div>
 
