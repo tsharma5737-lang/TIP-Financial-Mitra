@@ -20,7 +20,7 @@ const GOLD_DIM = "#8a6f32";
 
 const CATEGORIES = [
   "dining", "grocery", "amazon", "flipkart", "swiggy",
-  "zomato", "travel", "fuel", "utilities", "other",
+  "zomato", "travel", "fuel", "utilities", "other", "personal",
 ];
 
 type Tab = "pay" | "cards" | "rewards" | "profile";
@@ -431,11 +431,13 @@ const VPA_CATEGORY_MAP: Record<string, string> = {
 
 const HUMAN_CATEGORIES = [
   "Food Delivery", "Online Shopping", "Grocery", "Fuel", "Travel",
-  "Entertainment", "Utilities", "Pharmacy", "Dining", "Other",
+  "Entertainment", "Utilities", "Pharmacy", "Dining", "Personal Transfer", "Other",
 ];
 
-// Check VPA first, then merchant name — longer keys first to avoid prefix collisions
-function getCategory(parsed: { vpa: string; merchantName: string }): string | null {
+// Check VPA first, then merchant name — longer keys first to avoid prefix collisions.
+// Skip keyword matching entirely for personal transfers.
+function getCategory(parsed: { vpa: string; merchantName: string; isPersonal?: boolean }): string | null {
+  if (parsed.isPersonal) return "Personal Transfer";
   const keys = Object.keys(VPA_CATEGORY_MAP).sort((a, b) => b.length - a.length);
   if (parsed.vpa) {
     const v = parsed.vpa.toLowerCase();
@@ -455,11 +457,12 @@ function toEngineCategory(vpa: string, humanCat: string): string {
   if (v.includes("amazon"))   return "amazon";
   if (v.includes("flipkart")) return "flipkart";
   const map: Record<string, string> = {
-    "Food Delivery": "dining", "Online Shopping": "amazon",
-    "Grocery": "grocery",     "Fuel": "fuel",
-    "Travel": "travel",       "Entertainment": "other",
-    "Utilities": "utilities", "Pharmacy": "other",
-    "Dining": "dining",       "Other": "other",
+    "Food Delivery": "dining",     "Online Shopping": "amazon",
+    "Grocery": "grocery",          "Fuel": "fuel",
+    "Travel": "travel",            "Entertainment": "other",
+    "Utilities": "utilities",      "Pharmacy": "other",
+    "Dining": "dining",            "Personal Transfer": "other",
+    "Other": "other",
   };
   return map[humanCat] ?? "other";
 }
@@ -487,8 +490,47 @@ type ParsedQR = {
   city?: string;
   postal?: string;
   isURL?: boolean;
+  isPersonal?: boolean;
+  bank?: string;
   valid: boolean;
 };
+
+// ─── Personal UPI detection ───────────────────────────────────────────────────
+
+const PERSONAL_UPI_PATTERNS = [
+  /@okaxis$/i, /@okhdfcbank$/i, /@okicici$/i, /@oksbi$/i,
+  /@ybl$/i, /@ibl$/i, /@axl$/i, /@rapl$/i,
+  /@paytm$/i, /@apl$/i, /^\d{10}@/,
+];
+
+const MERCHANT_UPI_PATTERNS = [
+  /^[a-z]+\.rzp@/i, /^[a-z]+\.paytm@/i,
+  /merchant/i, /store/i, /shop/i, /mart/i,
+];
+
+function isPersonalUPI(vpa: string): boolean {
+  if (!vpa) return false;
+  if (/^\d{10}@/.test(vpa)) return true;           // 10-digit mobile VPAs are always personal
+  for (const p of MERCHANT_UPI_PATTERNS) { if (p.test(vpa)) return false; } // merchant beats personal
+  for (const p of PERSONAL_UPI_PATTERNS)  { if (p.test(vpa)) return true;  }
+  return false;
+}
+
+function getBankFromVPA(vpa: string): string {
+  if (!vpa) return "";
+  const suffix = (vpa.split("@")[1] ?? "").toLowerCase();
+  const bankMap: Record<string, string> = {
+    okaxis: "Axis Bank", okhdfcbank: "HDFC Bank", okicici: "ICICI Bank",
+    oksbi: "State Bank of India", ybl: "Yes Bank", ibl: "IndusInd Bank",
+    axl: "Axis Bank", rapl: "Axis Bank", paytm: "Paytm Payments Bank",
+    apl: "Amazon Pay", axisbank: "Axis Bank", hdfcbank: "HDFC Bank",
+    icici: "ICICI Bank", sbi: "State Bank of India", kotak: "Kotak Bank",
+    indus: "IndusInd Bank", fbl: "Federal Bank", upi: "UPI",
+    jupiteraxis: "Jupiter (Axis Bank)", fifederal: "Fi (Federal Bank)",
+    sliceaxis: "Slice (Axis Bank)",
+  };
+  return bankMap[suffix] || suffix.toUpperCase();
+}
 
 // Sequential EMV TLV walker — reads tag→length→value in order, never skips ahead
 // This correctly handles merchant names with digits/symbols because it uses the
@@ -515,13 +557,16 @@ function parseQRCode(qrText: string): ParsedQR {
   if (/^upi:\/\//i.test(text) ||
       (lower.includes("pa=") && !text.startsWith("000201"))) {
     try {
-      const url    = new URL(text.replace(/^upi:\/\//i, "https://upi/"));
-      const params = url.searchParams;
-      const vpa    = params.get("pa") || "";
+      const url      = new URL(text.replace(/^upi:\/\//i, "https://upi/"));
+      const params   = url.searchParams;
+      const vpa      = params.get("pa") || "";
+      const personal = isPersonalUPI(vpa);
       return {
         type: "UPI", vpa,
         merchantName: cleanMerchantName(params.get("pn") || vpa.split("@")[0] || "Merchant"),
         amount: params.get("am") || "",
+        isPersonal: personal,
+        bank: getBankFromVPA(vpa),
         valid: true,
       };
     } catch {
@@ -683,9 +728,11 @@ function PayScreen() {
   const [scannedVpa, setScannedVpa]       = useState("");
   const [scannedName, setScannedName]     = useState("");
   const [scannedType, setScannedType]     = useState<ParsedQR["type"]>("UPI");
-  const [scannedCity, setScannedCity]     = useState("");
-  const [scannedIsUrl, setScannedIsUrl]   = useState(false);
-  const [detectedCat, setDetectedCat]     = useState<string | null>(null);
+  const [scannedCity, setScannedCity]         = useState("");
+  const [scannedIsUrl, setScannedIsUrl]       = useState(false);
+  const [scannedIsPersonal, setScannedIsPersonal] = useState(false);
+  const [scannedBank, setScannedBank]         = useState("");
+  const [detectedCat, setDetectedCat]         = useState<string | null>(null);
   const [selectedHuman, setSelectedHuman] = useState(HUMAN_CATEGORIES[0]);
   const [confirmAmount, setConfirmAmount] = useState("");
 
@@ -707,6 +754,8 @@ function PayScreen() {
     setScannedType(parsed.type);
     setScannedCity(parsed.city ?? "");
     setScannedIsUrl(parsed.isURL ?? false);
+    setScannedIsPersonal(parsed.isPersonal ?? false);
+    setScannedBank(parsed.bank ?? "");
     setDetectedCat(cat);
     setSelectedHuman(cat ?? HUMAN_CATEGORIES[0]);
     setConfirmAmount(parsed.amount);
@@ -751,6 +800,7 @@ function PayScreen() {
     setAmount(""); setMerchant(""); setCategory("dining");
     setConfirmAmount(""); setScannedVpa(""); setScannedName("");
     setScannedType("UPI"); setScannedCity(""); setScannedIsUrl(false);
+    setScannedIsPersonal(false); setScannedBank("");
     setScanState("idle");
   }
 
@@ -921,6 +971,89 @@ function PayScreen() {
   // ── Confirm: show scanned data + amount input ─────────────────────────────
   if (scanState === "confirm") {
     const humanCat = detectedCat ?? selectedHuman;
+
+    // ── Personal UPI transfer screen ────────────────────────────────────────
+    if (scannedIsPersonal) {
+      return (
+        <>
+          <Header />
+          <div style={s.scrollArea}>
+            <div style={s.section}>
+              <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
+              <div style={s.formCard}>
+
+                {/* Personal summary card */}
+                <div style={{ background: "#0d1f10", border: "1px solid #4ade8044", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 8 }}>
+                  <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>✓ Personal UPI Detected</span>
+                  <div>
+                    <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>{scannedName}</div>
+                    <div style={{ color: "#7a9bcc", fontSize: 11, fontFamily: "monospace", letterSpacing: 0.3 }}>{scannedVpa}</div>
+                  </div>
+                  {scannedBank && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, color: "#7a9bcc", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1 }}>Bank</span>
+                      <span style={{ color: "#cbd5e1", fontSize: 13, fontWeight: 600 }}>{scannedBank}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Warning note */}
+                <div style={{ background: "#1f1200", border: "1px solid #f59e0b44", borderRadius: 10, padding: "12px 14px", display: "flex", gap: 10 }}>
+                  <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                  <div style={{ color: "#fbbf24", fontSize: 12, lineHeight: 1.7 }}>
+                    <strong>This is a personal transfer, not a merchant payment.</strong><br />
+                    Most credit cards do <em>not</em> earn rewards on UPI person-to-person transfers.<br />
+                    You can still check which card to use if your bank supports UPI credit card payments.
+                  </div>
+                </div>
+
+                {/* Category — locked to Personal Transfer */}
+                <div style={s.fieldWrapper}>
+                  <label style={s.fieldLabel}>Category</label>
+                  <div style={{ background: "#1a1f2e", border: "1px solid #2a3f58", borderRadius: 10, padding: "11px 14px", color: "#7a9bcc", fontSize: 14, fontWeight: 600 }}>
+                    Personal Transfer
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div style={s.fieldWrapper}>
+                  <label style={s.fieldLabel}>Amount{confirmAmount ? " (from QR)" : ""}</label>
+                  <div style={s.amountRow}>
+                    <span style={s.rupeeSymbol}>₹</span>
+                    <input
+                      type="number" placeholder="Enter amount" value={confirmAmount}
+                      onChange={(e) => setConfirmAmount(e.target.value)}
+                      style={s.amountInput} min={0} autoFocus
+                    />
+                  </div>
+                </div>
+
+                <button
+                  style={{ ...s.btn, background: "linear-gradient(135deg,#1e3a5f,#2563eb)", boxShadow: "0 6px 20px #2563eb44", transform: pressing ? "scale(0.97)" : "scale(1)" }}
+                  onMouseDown={() => setPressing(true)}
+                  onMouseUp={() => { setPressing(false); handleConfirmScore(); }}
+                  onMouseLeave={() => setPressing(false)}
+                  onTouchStart={() => setPressing(true)}
+                  onTouchEnd={() => { setPressing(false); handleConfirmScore(); }}
+                >
+                  Check Best Card Anyway →
+                </button>
+
+                <button
+                  onClick={handleDone}
+                  style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a", alignSelf: "center" as const }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <ResultsBlock />
+          </div>
+        </>
+      );
+    }
+
+    // ── Merchant QR confirm screen ───────────────────────────────────────────
 
     // Type badge colours
     const typeBadgeColour: Record<string, string> = {

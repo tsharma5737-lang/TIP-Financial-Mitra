@@ -1,0 +1,120 @@
+Fix two issues with personal UPI QR code scanning:
+
+Add logic to detect if a scanned QR is a personal transfer vs merchant payment:
+
+javascript// Personal UPI indicators
+const PERSONAL_UPI_PATTERNS = [
+  /@okaxis$/, /@okhdfcbank$/, /@okicici$/, /@oksbi$/,
+  /@ybl$/, /@ibl$/, /@axl$/, /@rapl$/,
+  /@paytm$/, /@apl$/, /^\d{10}@/
+];
+
+// Merchant UPI indicators  
+const MERCHANT_UPI_PATTERNS = [
+  /^[a-z]+\.rzp@/, /^[a-z]+\.paytm@/,
+  /merchant/i, /store/i, /shop/i, /mart/i
+];
+
+function isPersonalUPI(vpa) {
+  if (!vpa) return false;
+  // 10-digit mobile number VPAs are always personal
+  if (/^\d{10}@/.test(vpa)) return true;
+  // Check merchant indicators first
+  for (const pattern of MERCHANT_UPI_PATTERNS) {
+    if (pattern.test(vpa)) return false;
+  }
+  // Check personal indicators
+  for (const pattern of PERSONAL_UPI_PATTERNS) {
+    if (pattern.test(vpa)) return true;
+  }
+  return false;
+}
+
+function getBankFromVPA(vpa) {
+  if (!vpa) return '';
+  const suffix = vpa.split('@')[1]?.toLowerCase() || '';
+  const bankMap = {
+    'okaxis': 'Axis Bank',
+    'okhdfcbank': 'HDFC Bank',
+    'okicici': 'ICICI Bank',
+    'oksbi': 'State Bank of India',
+    'ybl': 'Yes Bank',
+    'ibl': 'IndusInd Bank',
+    'axl': 'Axis Bank',
+    'rapl': 'Axis Bank',
+    'paytm': 'Paytm Payments Bank',
+    'apl': 'Amazon Pay',
+    'axisbank': 'Axis Bank',
+    'hdfcbank': 'HDFC Bank',
+    'icici': 'ICICI Bank',
+    'sbi': 'State Bank of India',
+    'kotak': 'Kotak Bank',
+    'indus': 'IndusInd Bank',
+    'fbl': 'Federal Bank',
+    'upi': 'UPI',
+    'jupiteraxis': 'Jupiter (Axis Bank)',
+    'fifederal': 'Fi (Federal Bank)',
+    'sliceaxis': 'Slice (Axis Bank)'
+  };
+  return bankMap[suffix] || suffix.toUpperCase();
+}
+
+When a personal UPI QR is detected — show a different screen:
+
+✓ Personal UPI Detected
+
+Paying to: [Name from pn= parameter, cleaned]
+UPI ID:    [VPA — show in smaller grey text]
+Bank:      [Bank name from VPA suffix]
+
+⚠️ This is a personal transfer, not a merchant payment.
+   Card rewards usually do not apply to UPI person-to-person transfers.
+   
+   You can still check which card to use if your bank 
+   supports UPI credit card payments.
+
+Category: Personal Transfer
+Amount:   [₹ input field]
+
+[Check Best Card Anyway →]
+[Cancel]
+
+Add "Personal Transfer" as a new category in the category dropdown for manual entry as well.
+Fix the category detection to NOT match food/other keywords inside personal VPAs. Only match merchant keywords when isPersonalUPI() returns false.
+
+Update getCategory() like this:
+javascriptfunction getCategory(parsed) {
+  // Personal transfers get their own category
+  if (parsed.isPersonal) return 'Personal Transfer';
+  
+  // Only do keyword matching for merchant QR codes
+  if (parsed.vpa) {
+    const vpaLower = parsed.vpa.toLowerCase();
+    for (const [key, category] of Object.entries(VPA_CATEGORY_MAP)) {
+      if (vpaLower.includes(key)) return category;
+    }
+  }
+  if (parsed.merchantName) {
+    const nameLower = parsed.merchantName.toLowerCase();
+    for (const [key, category] of Object.entries(VPA_CATEGORY_MAP)) {
+      if (nameLower.includes(key)) return category;
+    }
+  }
+  return null; // Show dropdown for unknown merchant category
+}
+
+Update parseQRCode to set isPersonal flag:
+
+Inside the UPI parsing section add:
+javascriptconst personal = isPersonalUPI(vpa);
+return {
+  type: 'UPI',
+  vpa: vpa,
+  merchantName: cleanMerchantName(params.get('pn') || vpa.split('@')[0]),
+  amount: params.get('am') || '',
+  bank: getBankFromVPA(vpa),
+  isPersonal: personal,
+  valid: true
+};
+
+Also add the warning note that most credit cards do NOT earn rewards on UPI person-to-person transfers — this is important and accurate financial information for the user.
