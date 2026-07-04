@@ -403,20 +403,30 @@ function BottomNav({ active, onTabChange }: { active: Tab; onTabChange: (t: Tab)
 // ─── VPA category lookup ─────────────────────────────────────────────────────
 
 const VPA_CATEGORY_MAP: Record<string, string> = {
+  // Food Delivery
   swiggy: "Food Delivery", zomato: "Food Delivery", eatsure: "Food Delivery",
+  // Online Shopping
   amazon: "Online Shopping", flipkart: "Online Shopping", myntra: "Online Shopping",
-  ajio: "Online Shopping", nykaa: "Online Shopping", meesho: "Online Shopping",
+  ajio: "Online Shopping", nykaa: "Online Shopping",
+  // Grocery
   bigbasket: "Grocery", blinkit: "Grocery", zepto: "Grocery", grofers: "Grocery",
-  jiomart: "Grocery", dunzo: "Grocery",
-  bpcl: "Fuel", hpcl: "Fuel", iocl: "Fuel", indianoil: "Fuel", reliance: "Fuel",
-  makemytrip: "Travel", goibibo: "Travel", cleartrip: "Travel", irctc: "Travel",
-  yatra: "Travel", airasia: "Travel", indigo: "Travel",
+  jiomart: "Grocery",
+  // Fuel
+  bpcl: "Fuel", hpcl: "Fuel", iocl: "Fuel", indianoil: "Fuel", petrol: "Fuel",
+  // Travel
+  makemytrip: "Travel", goibibo: "Travel", irctc: "Travel", cleartrip: "Travel",
+  yatra: "Travel",
+  // Entertainment
   bookmyshow: "Entertainment", pvr: "Entertainment", inox: "Entertainment",
-  hotstar: "Entertainment", netflix: "Entertainment",
+  // Utilities
   airtel: "Utilities", jio: "Utilities", vodafone: "Utilities", bsnl: "Utilities",
-  tatapower: "Utilities", bescom: "Utilities", adani: "Utilities",
+  // Pharmacy
   apollopharmacy: "Pharmacy", medplus: "Pharmacy", netmeds: "Pharmacy", "1mg": "Pharmacy",
-  "swiggy.dineout": "Dining", eazydiner: "Dining", "zomato.dining": "Dining",
+  medico: "Pharmacy", pharma: "Pharmacy", medical: "Pharmacy", medicine: "Pharmacy",
+  chemist: "Pharmacy", drugs: "Pharmacy",
+  // Dining
+  restaurant: "Dining", hotel: "Dining", cafe: "Dining",
+  dineout: "Dining", eazydiner: "Dining",
 };
 
 const HUMAN_CATEGORIES = [
@@ -424,12 +434,16 @@ const HUMAN_CATEGORIES = [
   "Entertainment", "Utilities", "Pharmacy", "Dining", "Other",
 ];
 
-function getVpaCategory(vpa: string): string | null {
-  const v = vpa.toLowerCase();
-  // Longer keys first so "swiggy.dineout" matches before "swiggy"
+// Check VPA first, then merchant name — longer keys first to avoid prefix collisions
+function getCategory(parsed: { vpa: string; merchantName: string }): string | null {
   const keys = Object.keys(VPA_CATEGORY_MAP).sort((a, b) => b.length - a.length);
-  for (const key of keys) {
-    if (v.includes(key)) return VPA_CATEGORY_MAP[key];
+  if (parsed.vpa) {
+    const v = parsed.vpa.toLowerCase();
+    for (const key of keys) { if (v.includes(key)) return VPA_CATEGORY_MAP[key]; }
+  }
+  if (parsed.merchantName) {
+    const n = parsed.merchantName.toLowerCase();
+    for (const key of keys) { if (n.includes(key)) return VPA_CATEGORY_MAP[key]; }
   }
   return null;
 }
@@ -471,36 +485,43 @@ type ParsedQR = {
   amount: string;
   note?: string;
   city?: string;
+  postal?: string;
   isURL?: boolean;
   valid: boolean;
 };
 
-// Extract EMV TLV value by tag id — length-driven, not regex-bounded
-function emvExtractTag(data: string, tagId: string): string {
-  const idx = data.indexOf(tagId);
-  if (idx === -1) return "";
-  const lenStr = data.substring(idx + tagId.length, idx + tagId.length + 2);
-  const len = parseInt(lenStr, 10);
-  if (isNaN(len) || len <= 0) return "";
-  return data.substring(idx + tagId.length + 2, idx + tagId.length + 2 + len);
+// Sequential EMV TLV walker — reads tag→length→value in order, never skips ahead
+// This correctly handles merchant names with digits/symbols because it uses the
+// declared byte-length rather than character-class regexes to bound each value.
+function emvParseTags(data: string): Record<string, string> {
+  const tags: Record<string, string> = {};
+  let i = 0;
+  while (i + 4 <= data.length) {
+    const tag    = data.substring(i, i + 2);
+    const lenStr = data.substring(i + 2, i + 4);
+    const len    = parseInt(lenStr, 10);
+    if (isNaN(len) || len < 0 || i + 4 + len > data.length) break;
+    tags[tag] = data.substring(i + 4, i + 4 + len);
+    i += 4 + len;
+  }
+  return tags;
 }
 
 function parseQRCode(qrText: string): ParsedQR {
   const text  = qrText.trim();
-  const lower = text.toLowerCase(); // use for case-insensitive keyword checks
+  const lower = text.toLowerCase();
 
-  // ── TYPE 1 & 7 — Standard UPI QR (most common) ───────────────────────────
-  if (/^upi:\/\//i.test(text) || lower.includes("pa=")) {
+  // ── Standard UPI ─────────────────────────────────────────────────────────
+  if (/^upi:\/\//i.test(text) ||
+      (lower.includes("pa=") && !text.startsWith("000201"))) {
     try {
-      const url = new URL(text.replace(/^upi:\/\//i, "https://upi/"));
+      const url    = new URL(text.replace(/^upi:\/\//i, "https://upi/"));
       const params = url.searchParams;
-      const vpa     = params.get("pa") ?? "";
-      const rawName = (params.get("pn") ?? "").trim() || vpa.split("@")[0] || "Merchant";
+      const vpa    = params.get("pa") || "";
       return {
         type: "UPI", vpa,
-        merchantName: cleanMerchantName(rawName),
-        amount: params.get("am") ?? "",
-        note:   params.get("tn") ?? "",
+        merchantName: cleanMerchantName(params.get("pn") || vpa.split("@")[0] || "Merchant"),
+        amount: params.get("am") || "",
         valid: true,
       };
     } catch {
@@ -508,73 +529,48 @@ function parseQRCode(qrText: string): ParsedQR {
     }
   }
 
-  // ── TYPE 4 — Paytm QR ────────────────────────────────────────────────────
-  if (/^paytmqr:\/\//i.test(text) || lower.includes("paytm.com/qr")) {
-    try {
-      const url    = new URL(text.replace(/^paytmqr:\/\//i, "https://paytm/"));
-      const params = url.searchParams;
-      const vpa    = params.get("pa") ?? "";
-      return {
-        type: "PAYTM", vpa,
-        merchantName: cleanMerchantName((params.get("pn") ?? "").trim() || vpa.split("@")[0] || "Paytm Merchant"),
-        amount: params.get("am") ?? "",
-        valid: true,
-      };
-    } catch {
-      return { type: "PAYTM", vpa: "", merchantName: "Paytm Merchant", amount: "", valid: true };
-    }
+  // ── Paytm ─────────────────────────────────────────────────────────────────
+  if (/^paytmqr:\/\//i.test(text) || lower.includes("paytm.com")) {
+    return { type: "PAYTM", vpa: "", merchantName: "Paytm Merchant", amount: "", valid: true };
   }
 
-  // ── TYPE 5 — PhonePe QR ──────────────────────────────────────────────────
+  // ── PhonePe ───────────────────────────────────────────────────────────────
   if (/^phonepe:\/\//i.test(text) || lower.includes("phon.pe")) {
-    try {
-      const url    = new URL(text.replace(/^phonepe:\/\//i, "https://phonepe/"));
-      const params = url.searchParams;
-      const vpa    = params.get("pa") ?? "";
-      return {
-        type: "PHONEPE", vpa,
-        merchantName: cleanMerchantName((params.get("pn") ?? "").trim() || vpa.split("@")[0] || "PhonePe Merchant"),
-        amount: params.get("am") ?? "",
-        valid: true,
-      };
-    } catch {
-      return { type: "PHONEPE", vpa: "", merchantName: "PhonePe Merchant", amount: "", valid: true };
-    }
+    return { type: "PHONEPE", vpa: "", merchantName: "PhonePe Merchant", amount: "", valid: true };
   }
 
-  // ── TYPE 2 & 6 — EMV / BharatQR ─────────────────────────────────────────
-  if (text.startsWith("000201") || /^\d{30,}/.test(text)) {
-    // Length-driven EMV tag extraction (tag 59 = merchant name, tag 60 = city)
-    const merchantName = emvExtractTag(text, "59") || (() => {
-      const nm = text.match(/[A-Z][A-Z\s&.]{3,20}(?=[A-Z]{2}\d|\d{4,})/);
-      return nm ? nm[0].trim() : "Local Merchant";
-    })();
-    const city = emvExtractTag(text, "60");
+  // ── EMV / BharatQR ────────────────────────────────────────────────────────
+  // Walk tags sequentially so declared length bounds each value correctly.
+  // Tag 59 = merchant name, tag 60 = city, tag 61 = postal code.
+  if (text.startsWith("000201") || /^\d{20,}/.test(text)) {
+    const tags = emvParseTags(text);
 
-    // BharatQR: must start with EMV header AND contain NPCI-specific tag 51
-    // Tag 51 in BharatQR is a full sub-TLV block with known sub-tags; use
-    // "5101" as a stronger signature than bare "51" to reduce false positives
-    const isBharatQR = text.startsWith("000201") && text.includes("5101");
+    const merchantName = (tags["59"] || "").trim();
+    const city         = (tags["60"] || "").trim();
+    const postal       = (tags["61"] || "").trim();
+
+    // VPA may be embedded inside a sub-TLV (tag 26/51 area) — extract if present
+    const vpaMatch = text.match(/([A-Za-z0-9._-]+@[A-Za-z]+)/);
+    const vpa = vpaMatch ? vpaMatch[1] : "";
 
     return {
-      type: isBharatQR ? "BHARATQR" : "EMV",
-      vpa: "", merchantName: cleanMerchantName(merchantName),
-      city, amount: "", valid: true,
+      type: "EMV", vpa,
+      merchantName: cleanMerchantName(merchantName || "Local Merchant"),
+      city, postal, amount: "", valid: true,
     };
   }
 
-  // ── TYPE 8 — HTTPS redirect QR (Razorpay, payment links) ─────────────────
+  // ── HTTPS URL ─────────────────────────────────────────────────────────────
   if (/^https?:\/\//i.test(text)) {
-    const domain       = text.split("/")[2] ?? "";
-    const merchantHint = domain.replace(/^www\./, "").split(".")[0];
+    const domain = (text.split("/")[2] || "").replace(/^www\./i, "");
     return {
       type: "URL", vpa: "",
-      merchantName: cleanMerchantName(merchantHint) || "Online Merchant",
+      merchantName: cleanMerchantName(domain.split(".")[0]) || "Online Merchant",
       amount: "", isURL: true, valid: true,
     };
   }
 
-  // ── TYPE 3 — Plain VPA QR ────────────────────────────────────────────────
+  // ── Plain VPA ─────────────────────────────────────────────────────────────
   if (lower.includes("@")) {
     const vpa = text.split(/\s/)[0];
     return {
@@ -584,7 +580,7 @@ function parseQRCode(qrText: string): ParsedQR {
     };
   }
 
-  // ── UNKNOWN ──────────────────────────────────────────────────────────────
+  // ── Unknown ───────────────────────────────────────────────────────────────
   return { type: "UNKNOWN", vpa: "", merchantName: "Merchant", amount: "", valid: true };
 }
 
@@ -689,7 +685,6 @@ function PayScreen() {
   const [scannedType, setScannedType]     = useState<ParsedQR["type"]>("UPI");
   const [scannedCity, setScannedCity]     = useState("");
   const [scannedIsUrl, setScannedIsUrl]   = useState(false);
-  const [rawQrText, setRawQrText]         = useState("");
   const [detectedCat, setDetectedCat]     = useState<string | null>(null);
   const [selectedHuman, setSelectedHuman] = useState(HUMAN_CATEGORIES[0]);
   const [confirmAmount, setConfirmAmount] = useState("");
@@ -705,9 +700,8 @@ function PayScreen() {
 
   // Called when html5-qrcode successfully reads a QR
   function handleQrScanned(raw: string) {
-    setRawQrText(raw); // DEBUG — store raw before any parsing
     const parsed = parseQRCode(raw);
-    const cat    = getVpaCategory(parsed.vpa);
+    const cat    = getCategory(parsed);
     setScannedVpa(parsed.vpa);
     setScannedName(parsed.merchantName);
     setScannedType(parsed.type);
@@ -757,7 +751,6 @@ function PayScreen() {
     setAmount(""); setMerchant(""); setCategory("dining");
     setConfirmAmount(""); setScannedVpa(""); setScannedName("");
     setScannedType("UPI"); setScannedCity(""); setScannedIsUrl(false);
-    setRawQrText("");
     setScanState("idle");
   }
 
@@ -966,24 +959,6 @@ function PayScreen() {
                     <span style={{ fontSize: 11 }}>📍</span> {scannedCity}
                   </div>
                 ) : null}
-              </div>
-
-              {/* ── DEBUG: raw QR data ──────────────────────────────── */}
-              <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column" as const, gap: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ color: "#888", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" as const }}>🐛 Raw QR Data</span>
-                  <button
-                    onClick={() => navigator.clipboard.writeText(rawQrText).catch(() => {})}
-                    style={{ background: "#2a2a2a", border: "1px solid #444", borderRadius: 5, color: "#aaa", fontSize: 10, fontWeight: 600, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}
-                  >
-                    Copy
-                  </button>
-                </div>
-                <div style={{ background: "#111", borderRadius: 5, padding: "8px 10px", maxHeight: 100, overflowY: "auto" as const, overflowX: "auto" as const }}>
-                  <pre style={{ margin: 0, color: "#999", fontSize: 10, fontFamily: "monospace", whiteSpace: "pre-wrap" as const, wordBreak: "break-all" as const, lineHeight: 1.5 }}>
-                    {rawQrText}
-                  </pre>
-                </div>
               </div>
 
               {/* URL payment link note */}

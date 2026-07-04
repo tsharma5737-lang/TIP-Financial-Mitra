@@ -1,0 +1,225 @@
+Fix the QR parser using the actual EMV QR structure. Replace the parseQRCode and related functions with this precise version:
+javascriptfunction parseQRCode(qrText) {
+  const text = qrText.trim();
+
+  // ── STANDARD UPI ──────────────────────────────────────────
+  if (text.startsWith('upi://') || 
+      (text.includes('pa=') && !text.startsWith('000201'))) {
+    try {
+      const url = new URL(text.replace('upi://', 'https://upi/'));
+      const params = new URLSearchParams(url.search);
+      const vpa = params.get('pa') || '';
+      return {
+        type: 'UPI',
+        vpa: vpa,
+        merchantName: cleanMerchantName(
+          params.get('pn') || vpa.split('@')[0] || 'Merchant'
+        ),
+        amount: params.get('am') || '',
+        valid: true
+      };
+    } catch {
+      return { valid: false };
+    }
+  }
+
+  // ── PAYTM ─────────────────────────────────────────────────
+  if (text.startsWith('paytmqr://') || text.includes('paytm.com')) {
+    return {
+      type: 'PAYTM',
+      vpa: '',
+      merchantName: 'Paytm Merchant',
+      amount: '',
+      valid: true
+    };
+  }
+
+  // ── PHONEPE ───────────────────────────────────────────────
+  if (text.startsWith('phonepe://') || text.includes('phon.pe')) {
+    return {
+      type: 'PHONEPE',
+      vpa: '',
+      merchantName: 'PhonePe Merchant',
+      amount: '',
+      valid: true
+    };
+  }
+
+  // ── EMV / BHARATQR ────────────────────────────────────────
+  // Structure confirmed from real QR:
+  // ...5911S K MEDICOS6005DELHI6106110075...
+  // Tag 59 = merchant name, tag 60 = city, tag 61 = postal code
+  if (text.startsWith('000201') || /^\d{20,}/.test(text)) {
+
+    // Extract merchant name — tag 59
+    // Format: 59 + 2-digit length + merchant name
+    let merchantName = '';
+    const tag59 = text.match(/59(\d{2})([^\d@]{2,30})/);
+    if (tag59) {
+      const len = parseInt(tag59[1]);
+      merchantName = tag59[2].substring(0, len).trim();
+    }
+
+    // Extract city — tag 60
+    let city = '';
+    const tag60 = text.match(/60(\d{2})([A-Za-z\s]{2,20})/);
+    if (tag60) {
+      const len = parseInt(tag60[1]);
+      city = tag60[2].substring(0, len).trim();
+    }
+
+    // Extract VPA if embedded — look for @ pattern
+    let vpa = '';
+    const vpaMatch = text.match(/([A-Za-z0-9._-]+@[A-Za-z]+)/);
+    if (vpaMatch) vpa = vpaMatch[1];
+
+    // Extract postal code — tag 61
+    let postal = '';
+    const tag61 = text.match(/61(\d{2})(\d{6})/);
+    if (tag61) postal = tag61[2];
+
+    return {
+      type: 'EMV',
+      vpa: vpa,
+      merchantName: cleanMerchantName(merchantName || 'Local Merchant'),
+      city: city,
+      postal: postal,
+      amount: '',
+      valid: true
+    };
+  }
+
+  // ── HTTPS URL ─────────────────────────────────────────────
+  if (text.startsWith('https://') || text.startsWith('http://')) {
+    const domain = (text.split('/')[2] || '').replace('www.', '');
+    return {
+      type: 'URL',
+      vpa: '',
+      merchantName: cleanMerchantName(domain.split('.')[0]) || 'Online Merchant',
+      amount: '',
+      valid: true,
+      isURL: true
+    };
+  }
+
+  // ── PLAIN VPA ─────────────────────────────────────────────
+  if (text.includes('@')) {
+    const vpa = text.split(/\s/)[0];
+    return {
+      type: 'VPA',
+      vpa: vpa,
+      merchantName: cleanMerchantName(vpa.split('@')[0]),
+      amount: '',
+      valid: true
+    };
+  }
+
+  // ── UNKNOWN ───────────────────────────────────────────────
+  return {
+    type: 'UNKNOWN',
+    vpa: '',
+    merchantName: 'Merchant',
+    amount: '',
+    valid: true
+  };
+}
+
+function cleanMerchantName(raw) {
+  if (!raw) return 'Merchant';
+  return raw
+    .replace(/[^a-zA-Z0-9\s&.'-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+Also fix the VPA category mapping to include pharmacy keywords from VPA patterns:
+javascriptconst VPA_CATEGORY_MAP = {
+  // Food Delivery
+  'swiggy': 'Food Delivery',
+  'zomato': 'Food Delivery',
+  'eatsure': 'Food Delivery',
+  // Online Shopping
+  'amazon': 'Online Shopping',
+  'flipkart': 'Online Shopping',
+  'myntra': 'Online Shopping',
+  'ajio': 'Online Shopping',
+  'nykaa': 'Online Shopping',
+  // Grocery
+  'bigbasket': 'Grocery',
+  'blinkit': 'Grocery',
+  'zepto': 'Grocery',
+  'grofers': 'Grocery',
+  'jiomart': 'Grocery',
+  // Fuel
+  'bpcl': 'Fuel',
+  'hpcl': 'Fuel',
+  'iocl': 'Fuel',
+  'indianoil': 'Fuel',
+  'petrol': 'Fuel',
+  // Travel
+  'makemytrip': 'Travel',
+  'goibibo': 'Travel',
+  'irctc': 'Travel',
+  'cleartrip': 'Travel',
+  'yatra': 'Travel',
+  // Entertainment
+  'bookmyshow': 'Entertainment',
+  'pvr': 'Entertainment',
+  'inox': 'Entertainment',
+  // Utilities
+  'airtel': 'Utilities',
+  'jio': 'Utilities',
+  'vodafone': 'Utilities',
+  'bsnl': 'Utilities',
+  // Pharmacy
+  'apollopharmacy': 'Pharmacy',
+  'medplus': 'Pharmacy',
+  'netmeds': 'Pharmacy',
+  '1mg': 'Pharmacy',
+  'medico': 'Pharmacy',
+  'pharma': 'Pharmacy',
+  'medical': 'Pharmacy',
+  'medicine': 'Pharmacy',
+  'chemist': 'Pharmacy',
+  'drugs': 'Pharmacy',
+  // Dining
+  'restaurant': 'Dining',
+  'hotel': 'Dining',
+  'cafe': 'Dining',
+  'dineout': 'Dining',
+  'eazydiner': 'Dining'
+};
+
+function getCategory(parsed) {
+  // First check VPA against keyword map
+  if (parsed.vpa) {
+    const vpaLower = parsed.vpa.toLowerCase();
+    for (const [key, category] of Object.entries(VPA_CATEGORY_MAP)) {
+      if (vpaLower.includes(key)) return category;
+    }
+  }
+
+  // Then check merchant name against keyword map
+  if (parsed.merchantName) {
+    const nameLower = parsed.merchantName.toLowerCase();
+    for (const [key, category] of Object.entries(VPA_CATEGORY_MAP)) {
+      if (nameLower.includes(key)) return category;
+    }
+  }
+
+  // No match found — return null so UI shows dropdown
+  return null;
+}
+Also remove the temporary debug text box that was added earlier.
+After scanning the result screen should show:
+✓ QR Scanned
+
+Merchant: S K Medicos
+Location: Delhi
+
+Category: [dropdown — pre-selected to Pharmacy if name contains medico/pharma/medical, otherwise blank for user to select]
+Amount:   [₹ input field]
+
+[Find Best Card →]
+[Scan again]   [Enter manually instead]
