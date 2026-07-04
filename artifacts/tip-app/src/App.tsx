@@ -689,6 +689,7 @@ function PayScreen() {
   const [scannedType, setScannedType]     = useState<ParsedQR["type"]>("UPI");
   const [scannedCity, setScannedCity]     = useState("");
   const [scannedIsUrl, setScannedIsUrl]   = useState(false);
+  const [rawQrText, setRawQrText]         = useState("");
   const [detectedCat, setDetectedCat]     = useState<string | null>(null);
   const [selectedHuman, setSelectedHuman] = useState(HUMAN_CATEGORIES[0]);
   const [confirmAmount, setConfirmAmount] = useState("");
@@ -704,6 +705,7 @@ function PayScreen() {
 
   // Called when html5-qrcode successfully reads a QR
   function handleQrScanned(raw: string) {
+    setRawQrText(raw); // DEBUG — store raw before any parsing
     const parsed = parseQRCode(raw);
     const cat    = getVpaCategory(parsed.vpa);
     setScannedVpa(parsed.vpa);
@@ -755,6 +757,7 @@ function PayScreen() {
     setAmount(""); setMerchant(""); setCategory("dining");
     setConfirmAmount(""); setScannedVpa(""); setScannedName("");
     setScannedType("UPI"); setScannedCity(""); setScannedIsUrl(false);
+    setRawQrText("");
     setScanState("idle");
   }
 
@@ -963,6 +966,24 @@ function PayScreen() {
                     <span style={{ fontSize: 11 }}>📍</span> {scannedCity}
                   </div>
                 ) : null}
+              </div>
+
+              {/* ── DEBUG: raw QR data ──────────────────────────────── */}
+              <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ color: "#888", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" as const }}>🐛 Raw QR Data</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(rawQrText).catch(() => {})}
+                    style={{ background: "#2a2a2a", border: "1px solid #444", borderRadius: 5, color: "#aaa", fontSize: 10, fontWeight: 600, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Copy
+                  </button>
+                </div>
+                <div style={{ background: "#111", borderRadius: 5, padding: "8px 10px", maxHeight: 100, overflowY: "auto" as const, overflowX: "auto" as const }}>
+                  <pre style={{ margin: 0, color: "#999", fontSize: 10, fontFamily: "monospace", whiteSpace: "pre-wrap" as const, wordBreak: "break-all" as const, lineHeight: 1.5 }}>
+                    {rawQrText}
+                  </pre>
+                </div>
               </div>
 
               {/* URL payment link note */}
