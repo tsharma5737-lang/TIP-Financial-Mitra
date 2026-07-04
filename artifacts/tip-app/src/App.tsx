@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Html5QrcodeScanner, Html5QrcodeScanType } from "html5-qrcode";
 // @ts-ignore
 import { scoreCards } from "./engine/scoringEngine.js";
 // @ts-ignore
@@ -334,21 +335,6 @@ function formatRupee(val: number) {
   return `₹${Math.round(val).toLocaleString("en-IN")}`;
 }
 
-// ─── Mock transactions for QR scan demo ───────────────────────────────────────
-
-const mockTransactions = [
-  { amount: 850,   merchant: "Swiggy",          category: "swiggy"    },
-  { amount: 12499, merchant: "Amazon",           category: "amazon"    },
-  { amount: 8200,  merchant: "Air Asia",         category: "travel"    },
-  { amount: 450,   merchant: "Zomato",           category: "zomato"    },
-  { amount: 2300,  merchant: "BigBasket",        category: "grocery"   },
-  { amount: 960,   merchant: "BookMyShow",       category: "other"     },
-  { amount: 6750,  merchant: "MakeMyTrip",       category: "travel"    },
-  { amount: 3000,  merchant: "Reliance Petrol",  category: "fuel"      },
-  { amount: 4500,  merchant: "Myntra",           category: "other"     },
-  { amount: 1199,  merchant: "Airtel",           category: "utilities" },
-];
-
 // ─── Bottom Nav ───────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -477,48 +463,40 @@ function parseUpiQr(qrText: string) {
   }
 }
 
-// ─── Real camera QR scanner ───────────────────────────────────────────────────
+// ─── Real camera QR scanner (npm-based, no CDN dependency) ───────────────────
 
 function QRScannerView({
-  onScanned, onClose, onPermissionDenied,
+  onScanned, onClose,
 }: {
   onScanned: (text: string) => void;
   onClose: () => void;
-  onPermissionDenied: () => void;
 }) {
-  const scannerRef = useRef<any>(null);
-  const [starting, setStarting] = useState(true);
+  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Html5Qrcode = (window as any).Html5Qrcode;
-    if (!Html5Qrcode) { onPermissionDenied(); return; }
+    const scanner = new Html5QrcodeScanner(
+      "tip-qr-reader",
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+        rememberLastUsedCamera: true,
+        showTorchButtonIfSupported: true,
+      },
+      /* verbose= */ false,
+    );
 
-    const scanner = new Html5Qrcode("tip-qr-reader");
+    scanner.render(
+      (decodedText: string) => {
+        scanner.clear().catch(() => {});
+        onScanned(decodedText);
+      },
+      () => {}, // per-frame errors are normal — ignore
+    );
+
     scannerRef.current = scanner;
 
-    scanner.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
-      (decoded: string) => {
-        scanner.stop().catch(() => {}).finally(() => onScanned(decoded));
-      },
-      () => {}, // per-frame error — ignore
-    ).then(() => setStarting(false))
-     .catch((err: unknown) => {
-       const msg = String(err).toLowerCase();
-       if (
-         msg.includes("permission") || msg.includes("denied") ||
-         msg.includes("notallowed") || msg.includes("not found") ||
-         msg.includes("overconstrained")
-       ) {
-         onPermissionDenied();
-       } else {
-         onPermissionDenied();
-       }
-     });
-
-    return () => { scannerRef.current?.stop().catch(() => {}); };
+    return () => { scannerRef.current?.clear().catch(() => {}); };
   }, []);
 
   return (
@@ -526,33 +504,9 @@ function QRScannerView({
       <div style={{ color: GOLD, fontSize: 11, fontWeight: 700, textAlign: "center", letterSpacing: 1.2, textTransform: "uppercase" as const }}>
         Point camera at UPI QR code
       </div>
-
-      {/* Viewfinder */}
-      <div style={{ position: "relative" as const, borderRadius: 14, overflow: "hidden", background: "#000", border: `2px solid ${GOLD}44`, minHeight: 260 }}>
+      <div style={{ borderRadius: 14, overflow: "hidden", border: `2px solid ${GOLD}44` }}>
         <div id="tip-qr-reader" style={{ width: "100%" }} />
-
-        {starting && (
-          <div style={{ position: "absolute" as const, inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" as const, gap: 10, background: "#000a" }}>
-            <div style={{ width: 36, height: 36, border: `3px solid ${GOLD}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-            <span style={{ color: GOLD, fontSize: 12, fontWeight: 600 }}>Starting camera…</span>
-          </div>
-        )}
-
-        {/* Gold corner brackets */}
-        <div style={{ position: "absolute" as const, inset: 0, pointerEvents: "none" as const, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "relative" as const, width: 200, height: 200 }}>
-            {[
-              { top: 0,    left: 0,    borderTop: `3px solid ${GOLD}`, borderLeft: `3px solid ${GOLD}`,  borderRadius: "4px 0 0 0" },
-              { top: 0,    right: 0,   borderTop: `3px solid ${GOLD}`, borderRight: `3px solid ${GOLD}`, borderRadius: "0 4px 0 0" },
-              { bottom: 0, left: 0,    borderBottom: `3px solid ${GOLD}`, borderLeft: `3px solid ${GOLD}`,  borderRadius: "0 0 0 4px" },
-              { bottom: 0, right: 0,   borderBottom: `3px solid ${GOLD}`, borderRight: `3px solid ${GOLD}`, borderRadius: "0 0 4px 0" },
-            ].map((style, i) => (
-              <div key={i} style={{ position: "absolute" as const, width: 28, height: 28, ...style }} />
-            ))}
-          </div>
-        </div>
       </div>
-
       <button
         onClick={onClose}
         style={{ background: "transparent", border: `1px solid #1e3a6a`, borderRadius: 10, color: "#7a9bcc", fontSize: 13, fontWeight: 600, padding: "10px", cursor: "pointer", fontFamily: "inherit" }}
@@ -603,7 +557,6 @@ function PayScreen() {
 
   // Scanner state machine
   const [scanState, setScanState] = useState<ScanState>("idle");
-  const [cameraError, setCameraError] = useState(false);
 
   // Confirm-step state (after QR scan)
   const [scannedVpa, setScannedVpa]           = useState("");
@@ -772,21 +725,6 @@ function PayScreen() {
     </div>
   ) : null;
 
-  // ── Camera permission error ────────────────────────────────────────────────
-  const CameraErrorBox = () => cameraError ? (
-    <div style={{ background: "#1a0a0a", border: "1px solid #f8717155", borderRadius: 12, padding: "14px 16px", marginTop: 4 }}>
-      <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>📵 Camera access denied</div>
-      <div style={{ color: "#a87a7a", fontSize: 12, lineHeight: 1.6 }}>
-        To enable camera for QR scanning:<br />
-        <strong style={{ color: "#c8a0a0" }}>Chrome Android:</strong> tap the lock icon in the address bar → Permissions → Camera → Allow<br />
-        <strong style={{ color: "#c8a0a0" }}>iPhone Safari/Chrome:</strong> Settings → Privacy → Camera → enable for this site
-      </div>
-      <button onClick={() => setCameraError(false)} style={{ marginTop: 10, background: "transparent", border: "1px solid #f8717155", borderRadius: 8, color: "#f87171", fontSize: 11, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-        Dismiss
-      </button>
-    </div>
-  ) : null;
-
   // ── Idle: scan button + manual link ───────────────────────────────────────
   if (scanState === "idle") {
     return (
@@ -798,15 +736,13 @@ function PayScreen() {
             <div style={s.formCard}>
               {/* Big QR scan button */}
               <div
-                onClick={() => { setCameraError(false); setScanState("camera"); }}
+                onClick={() => setScanState("camera")}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, background: `${GOLD}10`, border: `2px dashed ${GOLD_DIM}`, borderRadius: 14, padding: "28px 16px", cursor: "pointer", transition: "all 0.2s" }}
               >
                 <div style={{ color: GOLD }}><QRIcon /></div>
                 <span style={{ color: GOLD, fontSize: 14, fontWeight: 800 }}>Tap to Scan &amp; Pay</span>
                 <span style={{ color: "#7a9bcc", fontSize: 11 }}>Opens rear camera · reads UPI QR codes</span>
               </div>
-
-              <CameraErrorBox />
 
               {/* Manual fallback */}
               <button
@@ -846,7 +782,6 @@ function PayScreen() {
               <QRScannerView
                 onScanned={handleQrScanned}
                 onClose={() => setScanState("idle")}
-                onPermissionDenied={() => { setCameraError(true); setScanState("idle"); }}
               />
             </div>
           </div>
@@ -979,38 +914,6 @@ function PayScreen() {
           </div>
         </div>
         <ResultsBlock />
-      </div>
-    </>
-  );
-}
-
-// ─── Placeholder screens ──────────────────────────────────────────────────────
-
-function PlaceholderScreen({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
-  return (
-    <>
-      <div style={s.header}>
-        <div style={s.logoBox}>
-          <span style={s.logoText}>TIP</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <span style={s.headerTitle}>TIP</span>
-          <span style={s.headerSub}>Your Financial Mitra</span>
-        </div>
-      </div>
-      <div style={{ ...s.scrollArea, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center", padding: "40px 24px" }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: 18,
-            background: `${GOLD}14`, border: `1px solid ${GOLD}33`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 16px",
-          }}>
-            {icon}
-          </div>
-          <div style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{title}</div>
-          <div style={{ color: "#7a9bcc", fontSize: 13 }}>{sub}</div>
-        </div>
       </div>
     </>
   );

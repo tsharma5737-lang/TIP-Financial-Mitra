@@ -1,0 +1,140 @@
+Fix the QR scanner by switching from the CDN script to the npm package. Do the following:
+
+Remove the html5-qrcode script tag from index.html completely
+Install the npm package by running:
+
+npm install html5-qrcode
+
+Import it at the top of the component file where the scanner is used:
+
+javascriptimport { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode';
+
+Replace the existing scanner implementation with this working version using useEffect and useRef:
+
+javascriptimport { useEffect, useRef, useState } from 'react';
+import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode';
+
+function QRScanner({ onScanSuccess, onScanError }) {
+  const scannerRef = useRef(null);
+  const [scanning, setScanning] = useState(false);
+
+  useEffect(() => {
+    if (!scanning) return;
+
+    const scanner = new Html5QrcodeScanner(
+      'qr-reader',
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+        rememberLastUsedCamera: true,
+        showTorchButtonIfSupported: true,
+      },
+      false
+    );
+
+    scanner.render(
+      (decodedText) => {
+        scanner.clear();
+        setScanning(false);
+        onScanSuccess(decodedText);
+      },
+      (error) => {
+        // Scanning errors are normal — ignore them
+      }
+    );
+
+    scannerRef.current = scanner;
+
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(() => {});
+      }
+    };
+  }, [scanning]);
+
+  return (
+    <div>
+      {!scanning ? (
+        <button
+          onClick={() => setScanning(true)}
+          style={{
+            background: '#C9A84C',
+            color: '#0D1A2E',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '16px 32px',
+            fontSize: '1rem',
+            fontWeight: '700',
+            cursor: 'pointer',
+            width: '100%',
+            marginBottom: '12px'
+          }}
+        >
+          📷 Scan QR Code
+        </button>
+      ) : (
+        <div>
+          <div id="qr-reader" style={{ width: '100%' }} />
+          <button
+            onClick={() => {
+              if (scannerRef.current) {
+                scannerRef.current.clear().catch(() => {});
+              }
+              setScanning(false);
+            }}
+            style={{
+              background: 'transparent',
+              border: '1px solid #C9A84C',
+              color: '#C9A84C',
+              borderRadius: '8px',
+              padding: '10px 20px',
+              marginTop: '12px',
+              cursor: 'pointer',
+              width: '100%'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+Use this VPA category mapping when processing the scanned QR result:
+
+javascriptconst VPA_CATEGORY_MAP = {
+  'swiggy': 'Food Delivery', 'zomato': 'Food Delivery',
+  'amazon': 'Online Shopping', 'flipkart': 'Online Shopping', 'myntra': 'Online Shopping',
+  'bigbasket': 'Grocery', 'blinkit': 'Grocery', 'zepto': 'Grocery',
+  'bpcl': 'Fuel', 'hpcl': 'Fuel', 'iocl': 'Fuel', 'indianoil': 'Fuel',
+  'makemytrip': 'Travel', 'goibibo': 'Travel', 'irctc': 'Travel',
+  'bookmyshow': 'Entertainment', 'pvr': 'Entertainment',
+  'airtel': 'Utilities', 'jio': 'Utilities', 'vodafone': 'Utilities',
+  'apollopharmacy': 'Pharmacy', 'medplus': 'Pharmacy', '1mg': 'Pharmacy',
+  'eazydiner': 'Dining', 'dineout': 'Dining'
+};
+
+function getCategory(qrText) {
+  const text = qrText.toLowerCase();
+  for (const [key, category] of Object.entries(VPA_CATEGORY_MAP)) {
+    if (text.includes(key)) return category;
+  }
+  return null;
+}
+
+After a successful scan:
+
+
+Parse the QR text to extract VPA — UPI QR format is typically: upi://pay?pa=VPA&pn=NAME&am=AMOUNT
+Extract the pa= parameter as the VPA
+Extract the am= parameter as the amount if present
+Run getCategory() on the VPA
+If category found — show merchant name, category with green tick, pre-fill amount if available, ask user to confirm
+If category not found — show VPA, ask user to select category from dropdown, enter amount
+Then run the existing scoring engine
+
+
+Also clean up — remove the unused mockTransactions array and PlaceholderScreen component
+Keep all other screens exactly as they are
