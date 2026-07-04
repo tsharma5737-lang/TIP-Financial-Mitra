@@ -1,0 +1,172 @@
+Update the QR scanner to handle all Indian merchant QR code formats. Replace the existing parseQRCode function with this comprehensive version:
+javascriptfunction parseQRCode(qrText) {
+  const text = qrText.trim();
+
+  // ── TYPE 1 & 7 — Standard UPI QR (most common) ──────────
+  if (text.startsWith('upi://') || text.includes('pa=')) {
+    try {
+      const url = new URL(text.replace('upi://', 'https://upi/'));
+      const params = new URLSearchParams(url.search);
+      const vpa = params.get('pa') || '';
+      const rawName = params.get('pn') || vpa.split('@')[0] || 'Merchant';
+      return {
+        type: 'UPI',
+        vpa: vpa,
+        merchantName: cleanMerchantName(rawName),
+        amount: params.get('am') || '',
+        note: params.get('tn') || '',
+        valid: true
+      };
+    } catch {
+      return { valid: false };
+    }
+  }
+
+  // ── TYPE 4 — Paytm QR ───────────────────────────────────
+  if (text.startsWith('paytmqr://') || text.includes('paytm.com/qr')) {
+    try {
+      const url = new URL(text.replace('paytmqr://', 'https://paytm/'));
+      const params = new URLSearchParams(url.search);
+      const vpa = params.get('pa') || '';
+      return {
+        type: 'PAYTM',
+        vpa: vpa,
+        merchantName: cleanMerchantName(params.get('pn') || vpa.split('@')[0] || 'Paytm Merchant'),
+        amount: params.get('am') || '',
+        valid: true
+      };
+    } catch {
+      return {
+        type: 'PAYTM',
+        vpa: '',
+        merchantName: 'Paytm Merchant',
+        amount: '',
+        valid: true
+      };
+    }
+  }
+
+  // ── TYPE 5 — PhonePe QR ─────────────────────────────────
+  if (text.startsWith('phonepe://') || text.includes('phon.pe')) {
+    try {
+      const url = new URL(text.replace('phonepe://', 'https://phonepe/'));
+      const params = new URLSearchParams(url.search);
+      const vpa = params.get('pa') || '';
+      return {
+        type: 'PHONEPE',
+        vpa: vpa,
+        merchantName: cleanMerchantName(params.get('pn') || vpa.split('@')[0] || 'PhonePe Merchant'),
+        amount: params.get('am') || '',
+        valid: true
+      };
+    } catch {
+      return {
+        type: 'PHONEPE',
+        vpa: '',
+        merchantName: 'PhonePe Merchant',
+        amount: '',
+        valid: true
+      };
+    }
+  }
+
+  // ── TYPE 2 & 6 — EMV QR and BharatQR ───────────────────
+  if (text.startsWith('000201') || /^\d{30,}/.test(text)) {
+    // Extract merchant name — EMV tag 59 (merchant name field)
+    // Tag 59 format: 59 + 2-digit length + value
+    let merchantName = 'Local Merchant';
+    let city = '';
+
+    const tag59Match = text.match(/59(\d{2})([A-Za-z\s&.'-]{2,25})/);
+    if (tag59Match) {
+      const len = parseInt(tag59Match[1]);
+      merchantName = tag59Match[2].substring(0, len).trim();
+    } else {
+      // Fallback — look for uppercase word sequences typical of merchant names
+      const nameMatch = text.match(/[A-Z][A-Z\s&.]{3,20}(?=[A-Z]{2}\d|\d{4,})/);
+      if (nameMatch) merchantName = nameMatch[0].trim();
+    }
+
+    // Extract city — EMV tag 60
+    const tag60Match = text.match(/60(\d{2})([A-Za-z\s]{2,15})/);
+    if (tag60Match) {
+      const len = parseInt(tag60Match[1]);
+      city = tag60Match[2].substring(0, len).trim();
+    }
+
+    // Check if BharatQR — contains tag 51 (network specific data)
+    const isBharatQR = text.includes('51') && text.includes('000201');
+
+    return {
+      type: isBharatQR ? 'BHARATQR' : 'EMV',
+      vpa: '',
+      merchantName: cleanMerchantName(merchantName),
+      city: city,
+      amount: '',
+      valid: true
+    };
+  }
+
+  // ── TYPE 8 — HTTPS redirect QR (Razorpay, payment links) 
+  if (text.startsWith('https://') || text.startsWith('http://')) {
+    const domain = text.split('/')[2] || '';
+    const merchantHint = domain.replace('www.', '').split('.')[0];
+    return {
+      type: 'URL',
+      vpa: '',
+      merchantName: cleanMerchantName(merchantHint) || 'Online Merchant',
+      amount: '',
+      valid: true,
+      isURL: true
+    };
+  }
+
+  // ── TYPE 3 — Plain VPA QR ───────────────────────────────
+  if (text.includes('@')) {
+    const vpa = text.split(/\s/)[0];
+    return {
+      type: 'VPA',
+      vpa: vpa,
+      merchantName: cleanMerchantName(vpa.split('@')[0]),
+      amount: '',
+      valid: true
+    };
+  }
+
+  // ── UNKNOWN — show manual entry ─────────────────────────
+  return {
+    type: 'UNKNOWN',
+    vpa: '',
+    merchantName: 'Merchant',
+    amount: '',
+    valid: true
+  };
+}
+
+// ── Helper — clean and capitalise merchant name ──────────
+function cleanMerchantName(raw) {
+  if (!raw) return 'Merchant';
+  return raw
+    .replace(/[^a-zA-Z0-9\s&.'-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+After parsing — display the result screen like this for all QR types:
+✓ QR Scanned Successfully
+
+Merchant: [clean merchant name]
+Location: [city if available — hide this line if not]
+Type: [show small badge — UPI / EMV / Paytm / PhonePe / BharatQR]
+
+Category: [auto-detected with green tick OR dropdown]
+Amount: [pre-filled if available OR ₹ input field]
+
+[Find Best Card →]  ← gold button
+[Scan again]   [Enter manually instead]  ← text links below
+For URL type QR codes — show an additional note:
+"This is a payment link. Select your spending category 
+and enter the amount to get your card recommendation."
+Never show raw QR data, numbers, or technical strings to the user under any circumstances. Always show only the clean merchant name.
+Keep all existing screens and card scoring logic exactly as they are.

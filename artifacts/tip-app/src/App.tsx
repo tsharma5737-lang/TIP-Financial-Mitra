@@ -450,41 +450,142 @@ function toEngineCategory(vpa: string, humanCat: string): string {
   return map[humanCat] ?? "other";
 }
 
-// Turns "swiggy.rzp" → "Swiggy Rzp", strips @bank suffix
+// ─── Merchant name cleaner ────────────────────────────────────────────────────
+
 function cleanMerchantName(raw: string): string {
-  const base = raw.split("@")[0].replace(/[._\-]+/g, " ").trim();
-  return base
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
+  if (!raw) return "Merchant";
+  return raw
+    .replace(/[^a-zA-Z0-9\s&.'-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function parseUpiQr(qrText: string) {
-  try {
-    const trimmed = qrText.trim();
-    // Normalise upi:// scheme (case-insensitive) so URL() can parse params
-    const normalised = /^upi:\/\//i.test(trimmed)
-      ? trimmed.replace(/^upi:\/\//i, "https://upi/")
-      : trimmed;
-    const url = new URL(normalised);
-    const vpa = url.searchParams.get("pa") ?? trimmed;
-    const pn  = (url.searchParams.get("pn") ?? "").trim();
+// ─── Comprehensive Indian QR parser ──────────────────────────────────────────
+
+type ParsedQR = {
+  type: "UPI" | "PAYTM" | "PHONEPE" | "EMV" | "BHARATQR" | "URL" | "VPA" | "UNKNOWN";
+  vpa: string;
+  merchantName: string;
+  amount: string;
+  note?: string;
+  city?: string;
+  isURL?: boolean;
+  valid: boolean;
+};
+
+// Extract EMV TLV value by tag id — length-driven, not regex-bounded
+function emvExtractTag(data: string, tagId: string): string {
+  const idx = data.indexOf(tagId);
+  if (idx === -1) return "";
+  const lenStr = data.substring(idx + tagId.length, idx + tagId.length + 2);
+  const len = parseInt(lenStr, 10);
+  if (isNaN(len) || len <= 0) return "";
+  return data.substring(idx + tagId.length + 2, idx + tagId.length + 2 + len);
+}
+
+function parseQRCode(qrText: string): ParsedQR {
+  const text  = qrText.trim();
+  const lower = text.toLowerCase(); // use for case-insensitive keyword checks
+
+  // ── TYPE 1 & 7 — Standard UPI QR (most common) ───────────────────────────
+  if (/^upi:\/\//i.test(text) || lower.includes("pa=")) {
+    try {
+      const url = new URL(text.replace(/^upi:\/\//i, "https://upi/"));
+      const params = url.searchParams;
+      const vpa     = params.get("pa") ?? "";
+      const rawName = (params.get("pn") ?? "").trim() || vpa.split("@")[0] || "Merchant";
+      return {
+        type: "UPI", vpa,
+        merchantName: cleanMerchantName(rawName),
+        amount: params.get("am") ?? "",
+        note:   params.get("tn") ?? "",
+        valid: true,
+      };
+    } catch {
+      return { type: "UNKNOWN", vpa: "", merchantName: "Merchant", amount: "", valid: false };
+    }
+  }
+
+  // ── TYPE 4 — Paytm QR ────────────────────────────────────────────────────
+  if (/^paytmqr:\/\//i.test(text) || lower.includes("paytm.com/qr")) {
+    try {
+      const url    = new URL(text.replace(/^paytmqr:\/\//i, "https://paytm/"));
+      const params = url.searchParams;
+      const vpa    = params.get("pa") ?? "";
+      return {
+        type: "PAYTM", vpa,
+        merchantName: cleanMerchantName((params.get("pn") ?? "").trim() || vpa.split("@")[0] || "Paytm Merchant"),
+        amount: params.get("am") ?? "",
+        valid: true,
+      };
+    } catch {
+      return { type: "PAYTM", vpa: "", merchantName: "Paytm Merchant", amount: "", valid: true };
+    }
+  }
+
+  // ── TYPE 5 — PhonePe QR ──────────────────────────────────────────────────
+  if (/^phonepe:\/\//i.test(text) || lower.includes("phon.pe")) {
+    try {
+      const url    = new URL(text.replace(/^phonepe:\/\//i, "https://phonepe/"));
+      const params = url.searchParams;
+      const vpa    = params.get("pa") ?? "";
+      return {
+        type: "PHONEPE", vpa,
+        merchantName: cleanMerchantName((params.get("pn") ?? "").trim() || vpa.split("@")[0] || "PhonePe Merchant"),
+        amount: params.get("am") ?? "",
+        valid: true,
+      };
+    } catch {
+      return { type: "PHONEPE", vpa: "", merchantName: "PhonePe Merchant", amount: "", valid: true };
+    }
+  }
+
+  // ── TYPE 2 & 6 — EMV / BharatQR ─────────────────────────────────────────
+  if (text.startsWith("000201") || /^\d{30,}/.test(text)) {
+    // Length-driven EMV tag extraction (tag 59 = merchant name, tag 60 = city)
+    const merchantName = emvExtractTag(text, "59") || (() => {
+      const nm = text.match(/[A-Z][A-Z\s&.]{3,20}(?=[A-Z]{2}\d|\d{4,})/);
+      return nm ? nm[0].trim() : "Local Merchant";
+    })();
+    const city = emvExtractTag(text, "60");
+
+    // BharatQR: must start with EMV header AND contain NPCI-specific tag 51
+    // Tag 51 in BharatQR is a full sub-TLV block with known sub-tags; use
+    // "5101" as a stronger signature than bare "51" to reduce false positives
+    const isBharatQR = text.startsWith("000201") && text.includes("5101");
+
     return {
-      vpa,
-      merchantName: pn || cleanMerchantName(vpa),
-      amount: url.searchParams.get("am") ?? "",
-      note:   url.searchParams.get("tn") ?? "",
-    };
-  } catch {
-    const trimmed = qrText.trim();
-    return {
-      vpa: trimmed,
-      merchantName: cleanMerchantName(trimmed) || trimmed,
-      amount: "",
-      note: "",
+      type: isBharatQR ? "BHARATQR" : "EMV",
+      vpa: "", merchantName: cleanMerchantName(merchantName),
+      city, amount: "", valid: true,
     };
   }
+
+  // ── TYPE 8 — HTTPS redirect QR (Razorpay, payment links) ─────────────────
+  if (/^https?:\/\//i.test(text)) {
+    const domain       = text.split("/")[2] ?? "";
+    const merchantHint = domain.replace(/^www\./, "").split(".")[0];
+    return {
+      type: "URL", vpa: "",
+      merchantName: cleanMerchantName(merchantHint) || "Online Merchant",
+      amount: "", isURL: true, valid: true,
+    };
+  }
+
+  // ── TYPE 3 — Plain VPA QR ────────────────────────────────────────────────
+  if (lower.includes("@")) {
+    const vpa = text.split(/\s/)[0];
+    return {
+      type: "VPA", vpa,
+      merchantName: cleanMerchantName(vpa.split("@")[0]),
+      amount: "", valid: true,
+    };
+  }
+
+  // ── UNKNOWN ──────────────────────────────────────────────────────────────
+  return { type: "UNKNOWN", vpa: "", merchantName: "Merchant", amount: "", valid: true };
 }
 
 // ─── Real camera QR scanner (npm-based, no CDN dependency) ───────────────────
@@ -583,11 +684,14 @@ function PayScreen() {
   const [scanState, setScanState] = useState<ScanState>("idle");
 
   // Confirm-step state (after QR scan)
-  const [scannedVpa, setScannedVpa]           = useState("");
-  const [scannedName, setScannedName]         = useState("");
-  const [detectedCat, setDetectedCat]         = useState<string | null>(null);
-  const [selectedHuman, setSelectedHuman]     = useState(HUMAN_CATEGORIES[0]);
-  const [confirmAmount, setConfirmAmount]     = useState("");
+  const [scannedVpa, setScannedVpa]       = useState("");
+  const [scannedName, setScannedName]     = useState("");
+  const [scannedType, setScannedType]     = useState<ParsedQR["type"]>("UPI");
+  const [scannedCity, setScannedCity]     = useState("");
+  const [scannedIsUrl, setScannedIsUrl]   = useState(false);
+  const [detectedCat, setDetectedCat]     = useState<string | null>(null);
+  const [selectedHuman, setSelectedHuman] = useState(HUMAN_CATEGORIES[0]);
+  const [confirmAmount, setConfirmAmount] = useState("");
 
   // Manual-entry state
   const [amount, setAmount]     = useState("");
@@ -600,13 +704,16 @@ function PayScreen() {
 
   // Called when html5-qrcode successfully reads a QR
   function handleQrScanned(raw: string) {
-    const { vpa, merchantName, amount: qrAmt } = parseUpiQr(raw);
-    const cat = getVpaCategory(vpa);
-    setScannedVpa(vpa);
-    setScannedName(merchantName);
+    const parsed = parseQRCode(raw);
+    const cat    = getVpaCategory(parsed.vpa);
+    setScannedVpa(parsed.vpa);
+    setScannedName(parsed.merchantName);
+    setScannedType(parsed.type);
+    setScannedCity(parsed.city ?? "");
+    setScannedIsUrl(parsed.isURL ?? false);
     setDetectedCat(cat);
     setSelectedHuman(cat ?? HUMAN_CATEGORIES[0]);
-    setConfirmAmount(qrAmt);
+    setConfirmAmount(parsed.amount);
     setResults(null);
     setScanState("confirm");
   }
@@ -647,6 +754,7 @@ function PayScreen() {
     setResults(null);
     setAmount(""); setMerchant(""); setCategory("dining");
     setConfirmAmount(""); setScannedVpa(""); setScannedName("");
+    setScannedType("UPI"); setScannedCity(""); setScannedIsUrl(false);
     setScanState("idle");
   }
 
@@ -817,6 +925,15 @@ function PayScreen() {
   // ── Confirm: show scanned data + amount input ─────────────────────────────
   if (scanState === "confirm") {
     const humanCat = detectedCat ?? selectedHuman;
+
+    // Type badge colours
+    const typeBadgeColour: Record<string, string> = {
+      UPI: "#3b82f6", PAYTM: "#06b6d4", PHONEPE: "#8b5cf6",
+      BHARATQR: "#f59e0b", EMV: "#64748b", URL: "#10b981", VPA: "#3b82f6", UNKNOWN: "#64748b",
+    };
+    const typeBadgeBg = (typeBadgeColour[scannedType] ?? "#64748b") + "22";
+    const typeBadgeFg =  typeBadgeColour[scannedType] ?? "#64748b";
+
     return (
       <>
         <Header />
@@ -825,20 +942,44 @@ function PayScreen() {
             <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
             <div style={s.formCard}>
 
-              {/* Scanned badge */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 10, padding: "12px 14px" }}>
-                <span style={{ fontSize: 22, lineHeight: 1 }}>✅</span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>QR Scanned Successfully</span>
-                  <span style={{ color: "#ffffff", fontSize: 16, fontWeight: 800 }}>{scannedName || scannedVpa}</span>
-                  {scannedVpa && <span style={{ color: "#4a6a8a", fontSize: 10 }}>{scannedVpa}</span>}
+              {/* Scanned summary card */}
+              <div style={{ background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>✓ QR Scanned Successfully</span>
+                  <span style={{ background: typeBadgeBg, color: typeBadgeFg, fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: "3px 8px", borderRadius: 20, border: `1px solid ${typeBadgeFg}44` }}>
+                    {scannedType}
+                  </span>
                 </div>
+
+                {/* Merchant name — large, clean */}
+                <div style={{ color: "#ffffff", fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>
+                  {scannedName}
+                </div>
+
+                {/* City — only if present */}
+                {scannedCity ? (
+                  <div style={{ color: "#7a9bcc", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 11 }}>📍</span> {scannedCity}
+                  </div>
+                ) : null}
               </div>
 
-              {/* Category row */}
+              {/* URL payment link note */}
+              {scannedIsUrl && (
+                <div style={{ background: "#0f1f35", border: "1px solid #10b98144", borderRadius: 10, padding: "10px 14px", color: "#7dd3c8", fontSize: 12, lineHeight: 1.6 }}>
+                  💳 This is a payment link. Select your spending category and enter the amount to get your card recommendation.
+                </div>
+              )}
+
+              {/* Category */}
               <div style={s.fieldWrapper}>
                 <label style={s.fieldLabel}>
-                  Category {detectedCat ? <span style={{ color: "#4ade80", fontWeight: 700 }}>✓ Auto-detected</span> : <span style={{ color: "#f97316" }}>— please select</span>}
+                  Category{" "}
+                  {detectedCat
+                    ? <span style={{ color: "#4ade80", fontWeight: 700 }}>✓ Auto-detected</span>
+                    : <span style={{ color: "#f97316" }}>— please select</span>
+                  }
                 </label>
                 {detectedCat ? (
                   <div style={{ background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 10, padding: "11px 14px", color: "#4ade80", fontSize: 14, fontWeight: 700 }}>
@@ -872,7 +1013,7 @@ function PayScreen() {
                 onTouchStart={() => setPressing(true)}
                 onTouchEnd={() => { setPressing(false); handleConfirmScore(); }}
               >
-                Find Best Card
+                Find Best Card →
               </button>
 
               {/* Secondary actions */}
