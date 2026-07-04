@@ -324,6 +324,17 @@
     50%       { transform: scale(1.18); opacity: 0.6; }
   }
 
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  /* html5-qrcode normalization */
+  #tip-qr-reader { width: 100% !important; border: none !important; }
+  #tip-qr-reader video { width: 100% !important; height: auto !important; display: block; border-radius: 12px; }
+  #tip-qr-reader img { display: none !important; }
+  #tip-qr-reader canvas { border-radius: 12px; }
+
   /* Mobile-style constrained layout */
   .mobile-container {
     max-width: 430px;

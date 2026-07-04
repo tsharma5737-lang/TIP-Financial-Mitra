@@ -1,0 +1,64 @@
+Add a real camera QR code scanner to the Scan & Pay screen using the html5-qrcode library. Do the following:
+
+Install html5-qrcode: add this to index.html head section:
+
+html<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+Replace the existing mock QR scanning button with a real camera scanner that:
+
+
+Opens the rear camera when user taps "Scan QR"
+Reads any UPI QR code automatically
+Extracts the merchant VPA from the QR data
+Maps the VPA to a spending category using this lookup:
+
+javascriptconst VPA_CATEGORY_MAP = {
+  // Food delivery
+  'swiggy': 'Food Delivery', 'zomato': 'Food Delivery', 'eatsure': 'Food Delivery',
+  // Online shopping  
+  'amazon': 'Online Shopping', 'flipkart': 'Online Shopping', 'myntra': 'Online Shopping',
+  'ajio': 'Online Shopping', 'nykaa': 'Online Shopping', 'meesho': 'Online Shopping',
+  // Grocery
+  'bigbasket': 'Grocery', 'blinkit': 'Grocery', 'zepto': 'Grocery', 'grofers': 'Grocery',
+  'jiomart': 'Grocery', 'dunzo': 'Grocery',
+  // Fuel
+  'bpcl': 'Fuel', 'hpcl': 'Fuel', 'iocl': 'Fuel', 'indianoil': 'Fuel', 'reliance': 'Fuel',
+  // Travel
+  'makemytrip': 'Travel', 'goibibo': 'Travel', 'cleartrip': 'Travel', 'irctc': 'Travel',
+  'yatra': 'Travel', 'airasia': 'Travel', 'indigo': 'Travel',
+  // Entertainment
+  'bookmyshow': 'Entertainment', 'pvr': 'Entertainment', 'inox': 'Entertainment',
+  'hotstar': 'Entertainment', 'netflix': 'Entertainment',
+  // Utilities
+  'airtel': 'Utilities', 'jio': 'Utilities', 'vodafone': 'Utilities', 'bsnl': 'Utilities',
+  'tatapower': 'Utilities', 'bescom': 'Utilities', 'adani': 'Utilities',
+  // Pharmacy
+  'apollopharmacy': 'Pharmacy', 'medplus': 'Pharmacy', 'netmeds': 'Pharmacy', '1mg': 'Pharmacy',
+  // Dining
+  'swiggy.dineout': 'Dining', 'eazydiner': 'Dining', 'zomato.dining': 'Dining'
+};
+
+function getCategory(vpa) {
+  const vpaLower = vpa.toLowerCase();
+  for (const [key, category] of Object.entries(VPA_CATEGORY_MAP)) {
+    if (vpaLower.includes(key)) return category;
+  }
+  return null; // Unknown merchant
+}
+
+After reading the QR code:
+
+
+Show the merchant VPA and detected category to the user
+If category is detected automatically — show it with a green tick and ask user to confirm amount
+If category is NOT detected — show the VPA and ask user to select category from a dropdown of: Food Delivery, Online Shopping, Grocery, Fuel, Travel, Entertainment, Utilities, Pharmacy, Dining, Other
+Then ask user to enter or confirm the transaction amount
+Then run the existing card scoring engine with the merchant category and amount
+Show the ranked card results exactly as before
+
+
+Add a manual entry fallback button "Enter manually instead" below the scan button — for users who prefer to type the merchant category and amount without scanning
+Show a camera permission error message if the user denies camera access — with instructions to enable it in Chrome settings
+The scanner should work on both Android Chrome and iPhone Chrome
+Stop the camera automatically after a successful scan to preserve battery
+Keep all existing screens and functionality exactly as they are — only modify the Scan & Pay input method

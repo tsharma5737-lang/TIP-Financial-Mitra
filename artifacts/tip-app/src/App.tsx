@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 // @ts-ignore
 import { scoreCards } from "./engine/scoringEngine.js";
 // @ts-ignore
@@ -414,6 +414,155 @@ function BottomNav({ active, onTabChange }: { active: Tab; onTabChange: (t: Tab)
   );
 }
 
+// ─── VPA category lookup ─────────────────────────────────────────────────────
+
+const VPA_CATEGORY_MAP: Record<string, string> = {
+  swiggy: "Food Delivery", zomato: "Food Delivery", eatsure: "Food Delivery",
+  amazon: "Online Shopping", flipkart: "Online Shopping", myntra: "Online Shopping",
+  ajio: "Online Shopping", nykaa: "Online Shopping", meesho: "Online Shopping",
+  bigbasket: "Grocery", blinkit: "Grocery", zepto: "Grocery", grofers: "Grocery",
+  jiomart: "Grocery", dunzo: "Grocery",
+  bpcl: "Fuel", hpcl: "Fuel", iocl: "Fuel", indianoil: "Fuel", reliance: "Fuel",
+  makemytrip: "Travel", goibibo: "Travel", cleartrip: "Travel", irctc: "Travel",
+  yatra: "Travel", airasia: "Travel", indigo: "Travel",
+  bookmyshow: "Entertainment", pvr: "Entertainment", inox: "Entertainment",
+  hotstar: "Entertainment", netflix: "Entertainment",
+  airtel: "Utilities", jio: "Utilities", vodafone: "Utilities", bsnl: "Utilities",
+  tatapower: "Utilities", bescom: "Utilities", adani: "Utilities",
+  apollopharmacy: "Pharmacy", medplus: "Pharmacy", netmeds: "Pharmacy", "1mg": "Pharmacy",
+  "swiggy.dineout": "Dining", eazydiner: "Dining", "zomato.dining": "Dining",
+};
+
+const HUMAN_CATEGORIES = [
+  "Food Delivery", "Online Shopping", "Grocery", "Fuel", "Travel",
+  "Entertainment", "Utilities", "Pharmacy", "Dining", "Other",
+];
+
+function getVpaCategory(vpa: string): string | null {
+  const v = vpa.toLowerCase();
+  // Longer keys first so "swiggy.dineout" matches before "swiggy"
+  const keys = Object.keys(VPA_CATEGORY_MAP).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (v.includes(key)) return VPA_CATEGORY_MAP[key];
+  }
+  return null;
+}
+
+function toEngineCategory(vpa: string, humanCat: string): string {
+  const v = vpa.toLowerCase();
+  if (v.includes("swiggy") && !v.includes("dineout")) return "swiggy";
+  if (v.includes("zomato") && !v.includes("dining"))  return "zomato";
+  if (v.includes("amazon"))   return "amazon";
+  if (v.includes("flipkart")) return "flipkart";
+  const map: Record<string, string> = {
+    "Food Delivery": "dining", "Online Shopping": "amazon",
+    "Grocery": "grocery",     "Fuel": "fuel",
+    "Travel": "travel",       "Entertainment": "other",
+    "Utilities": "utilities", "Pharmacy": "other",
+    "Dining": "dining",       "Other": "other",
+  };
+  return map[humanCat] ?? "other";
+}
+
+function parseUpiQr(qrText: string) {
+  try {
+    const url = new URL(qrText);
+    return {
+      vpa:    url.searchParams.get("pa") ?? qrText,
+      name:   url.searchParams.get("pn") ?? "",
+      amount: url.searchParams.get("am") ?? "",
+    };
+  } catch {
+    return { vpa: qrText, name: "", amount: "" };
+  }
+}
+
+// ─── Real camera QR scanner ───────────────────────────────────────────────────
+
+function QRScannerView({
+  onScanned, onClose, onPermissionDenied,
+}: {
+  onScanned: (text: string) => void;
+  onClose: () => void;
+  onPermissionDenied: () => void;
+}) {
+  const scannerRef = useRef<any>(null);
+  const [starting, setStarting] = useState(true);
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Html5Qrcode = (window as any).Html5Qrcode;
+    if (!Html5Qrcode) { onPermissionDenied(); return; }
+
+    const scanner = new Html5Qrcode("tip-qr-reader");
+    scannerRef.current = scanner;
+
+    scanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
+      (decoded: string) => {
+        scanner.stop().catch(() => {}).finally(() => onScanned(decoded));
+      },
+      () => {}, // per-frame error — ignore
+    ).then(() => setStarting(false))
+     .catch((err: unknown) => {
+       const msg = String(err).toLowerCase();
+       if (
+         msg.includes("permission") || msg.includes("denied") ||
+         msg.includes("notallowed") || msg.includes("not found") ||
+         msg.includes("overconstrained")
+       ) {
+         onPermissionDenied();
+       } else {
+         onPermissionDenied();
+       }
+     });
+
+    return () => { scannerRef.current?.stop().catch(() => {}); };
+  }, []);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
+      <div style={{ color: GOLD, fontSize: 11, fontWeight: 700, textAlign: "center", letterSpacing: 1.2, textTransform: "uppercase" as const }}>
+        Point camera at UPI QR code
+      </div>
+
+      {/* Viewfinder */}
+      <div style={{ position: "relative" as const, borderRadius: 14, overflow: "hidden", background: "#000", border: `2px solid ${GOLD}44`, minHeight: 260 }}>
+        <div id="tip-qr-reader" style={{ width: "100%" }} />
+
+        {starting && (
+          <div style={{ position: "absolute" as const, inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" as const, gap: 10, background: "#000a" }}>
+            <div style={{ width: 36, height: 36, border: `3px solid ${GOLD}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            <span style={{ color: GOLD, fontSize: 12, fontWeight: 600 }}>Starting camera…</span>
+          </div>
+        )}
+
+        {/* Gold corner brackets */}
+        <div style={{ position: "absolute" as const, inset: 0, pointerEvents: "none" as const, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "relative" as const, width: 200, height: 200 }}>
+            {[
+              { top: 0,    left: 0,    borderTop: `3px solid ${GOLD}`, borderLeft: `3px solid ${GOLD}`,  borderRadius: "4px 0 0 0" },
+              { top: 0,    right: 0,   borderTop: `3px solid ${GOLD}`, borderRight: `3px solid ${GOLD}`, borderRadius: "0 4px 0 0" },
+              { bottom: 0, left: 0,    borderBottom: `3px solid ${GOLD}`, borderLeft: `3px solid ${GOLD}`,  borderRadius: "0 0 0 4px" },
+              { bottom: 0, right: 0,   borderBottom: `3px solid ${GOLD}`, borderRight: `3px solid ${GOLD}`, borderRadius: "0 0 4px 0" },
+            ].map((style, i) => (
+              <div key={i} style={{ position: "absolute" as const, width: 28, height: 28, ...style }} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={onClose}
+        style={{ background: "transparent", border: `1px solid #1e3a6a`, borderRadius: 10, color: "#7a9bcc", fontSize: 13, fontWeight: 600, padding: "10px", cursor: "pointer", fontFamily: "inherit" }}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 // ─── Pay Screen ───────────────────────────────────────────────────────────────
 
 function QRIcon() {
@@ -444,44 +593,73 @@ type PaySuccess = {
   saved: number;
 };
 
+type ScanState = "idle" | "camera" | "confirm" | "manual";
+
 function PayScreen() {
+  // Shared result state
+  const [results, setResults]     = useState<ScoredCard[] | null>(null);
+  const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
+  const [pressing, setPressing]   = useState(false);
+
+  // Scanner state machine
+  const [scanState, setScanState] = useState<ScanState>("idle");
+  const [cameraError, setCameraError] = useState(false);
+
+  // Confirm-step state (after QR scan)
+  const [scannedVpa, setScannedVpa]           = useState("");
+  const [scannedName, setScannedName]         = useState("");
+  const [detectedCat, setDetectedCat]         = useState<string | null>(null);
+  const [selectedHuman, setSelectedHuman]     = useState(HUMAN_CATEGORIES[0]);
+  const [confirmAmount, setConfirmAmount]     = useState("");
+
+  // Manual-entry state
   const [amount, setAmount]     = useState("");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("dining");
-  const [results, setResults]   = useState<ScoredCard[] | null>(null);
-  const [pressing, setPressing] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
 
   function runScore(amt: number, merch: string, cat: string) {
-    const scored = scoreCards({ amount: amt, merchant: merch || "Other", category: cat }) as ScoredCard[];
-    setResults(scored);
+    setResults(scoreCards({ amount: amt, merchant: merch || "Other", category: cat }) as ScoredCard[]);
   }
 
+  // Called when html5-qrcode successfully reads a QR
+  function handleQrScanned(raw: string) {
+    const { vpa, name, amount: qrAmt } = parseUpiQr(raw);
+    const cat = getVpaCategory(vpa);
+    setScannedVpa(vpa);
+    setScannedName(name);
+    setDetectedCat(cat);
+    setSelectedHuman(cat ?? HUMAN_CATEGORIES[0]);
+    setConfirmAmount(qrAmt);
+    setResults(null);
+    setScanState("confirm");
+  }
+
+  // Confirm step → score
+  function handleConfirmScore() {
+    const amt = parseFloat(confirmAmount);
+    if (!amt || amt <= 0) return;
+    const humanCat = detectedCat ?? selectedHuman;
+    const engCat   = toEngineCategory(scannedVpa, humanCat);
+    const merch    = scannedName || scannedVpa.split("@")[0];
+    setMerchant(merch);
+    setAmount(String(amt));
+    setCategory(engCat);
+    runScore(amt, merch, engCat);
+  }
+
+  // Manual entry → score
   function handleScore() {
     const parsed = parseFloat(amount);
     if (!parsed || parsed <= 0) return;
     runScore(parsed, merchant.trim(), category);
   }
 
-  function handleScan() {
-    setScanning(true);
-    setResults(null);
-    setTimeout(() => {
-      const tx = mockTransactions[Math.floor(Math.random() * mockTransactions.length)];
-      setAmount(String(tx.amount));
-      setMerchant(tx.merchant);
-      setCategory(tx.category);
-      setScanning(false);
-      runScore(tx.amount, tx.merchant, tx.category);
-    }, 1500);
-  }
-
   function handlePay() {
+    const best = results?.[0];
     if (!best) return;
     setPaySuccess({
-      merchant,
-      amount: parseFloat(amount),
+      merchant: merchant || scannedName || scannedVpa.split("@")[0],
+      amount: parseFloat(amount || confirmAmount),
       cardName: best.card.name,
       saved: best.totalValue,
     });
@@ -490,59 +668,44 @@ function PayScreen() {
   function handleDone() {
     setPaySuccess(null);
     setResults(null);
-    setAmount("");
-    setMerchant("");
-    setCategory("dining");
+    setAmount(""); setMerchant(""); setCategory("dining");
+    setConfirmAmount(""); setScannedVpa(""); setScannedName("");
+    setScanState("idle");
   }
 
   const best = results?.[0] ?? null;
   const rest = results?.slice(1) ?? [];
 
-  // ── Payment success screen ─────────────────────────────────────────────────
+  // ── Shared header ──────────────────────────────────────────────────────────
+  const Header = () => (
+    <div style={s.header}>
+      <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+        <span style={s.headerTitle}>TIP</span>
+        <span style={s.headerSub}>Your Financial Mitra</span>
+      </div>
+      <div style={{ background: "#1e2d40", borderRadius: 8, padding: "4px 8px", border: "1px solid #2a3f58", alignSelf: "flex-start" as const, marginTop: 2 }}>
+        <span style={{ fontSize: 9, fontWeight: 600, color: "#7a9bcc", letterSpacing: 0.5 }}>DEMO MODE</span>
+      </div>
+    </div>
+  );
+
+  // ── Payment success ────────────────────────────────────────────────────────
   if (paySuccess) {
     return (
       <>
-        <div style={s.header}>
-          <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={s.headerTitle}>TIP</span>
-            <span style={s.headerSub}>Your Financial Mitra</span>
-          </div>
-        </div>
+        <Header />
         <div style={{ ...s.scrollArea, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", padding: "40px 24px", width: "100%" }}>
-            {/* Green checkmark */}
-            <div style={{
-              width: 80, height: 80, borderRadius: "50%",
-              background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              margin: "0 auto 24px",
-              boxShadow: "0 0 32px #22c55e55",
-              animation: "pulse 1.5s ease-out",
-            }}>
+            <div style={{ width: 80, height: 80, borderRadius: "50%", background: "linear-gradient(135deg,#22c55e,#16a34a)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", boxShadow: "0 0 32px #22c55e55" }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} width={40} height={40}>
                 <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-
-            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 6 }}>
-              Payment Successful!
-            </div>
-            <div style={{ color: "#7a9bcc", fontSize: 14, marginBottom: 28 }}>
-              Transaction complete
-            </div>
-
-            {/* Details card */}
-            <div style={{
-              background: NAVY_CARD, borderRadius: 16,
-              border: `1px solid #1e3a6a`, padding: "20px 18px",
-              textAlign: "left", marginBottom: 20,
-            }}>
-              {[
-                ["Merchant",  paySuccess.merchant],
-                ["Amount",    formatRupee(paySuccess.amount)],
-                ["Card Used", paySuccess.cardName],
-              ].map(([k, v]) => (
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Payment Successful!</div>
+            <div style={{ color: "#7a9bcc", fontSize: 14, marginBottom: 28 }}>Transaction complete</div>
+            <div style={{ background: NAVY_CARD, borderRadius: 16, border: "1px solid #1e3a6a", padding: "20px 18px", textAlign: "left", marginBottom: 20 }}>
+              {[["Merchant", paySuccess.merchant], ["Amount", formatRupee(paySuccess.amount)], ["Card Used", paySuccess.cardName]].map(([k, v]) => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                   <span style={{ color: "#7a9bcc", fontSize: 13, fontWeight: 500 }}>{k}</span>
                   <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{v}</span>
@@ -554,7 +717,6 @@ function PayScreen() {
                 <span style={{ color: GOLD, fontSize: 16, fontWeight: 800 }}>{formatRupee(paySuccess.saved)}</span>
               </div>
             </div>
-
             <button style={s.btn} onClick={handleDone}>Done</button>
           </div>
         </div>
@@ -562,132 +724,246 @@ function PayScreen() {
     );
   }
 
-  // ── Main pay screen ────────────────────────────────────────────────────────
+  // ── Results block (shared) ─────────────────────────────────────────────────
+  const ResultsBlock = () => results && best ? (
+    <div style={s.resultsSection}>
+      <div style={{ ...s.bestCardWrapper, boxShadow: `0 0 20px rgba(201,168,76,0.6),0 8px 32px ${GOLD}22` }}>
+        <div style={s.bestCardGlow} />
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `${GOLD}22`, borderRadius: 6, padding: "4px 10px", marginBottom: 12 }}>
+          <span style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.5 }}>★ BEST CARD FOR THIS PAYMENT</span>
+        </div>
+        <div style={s.bestCardBank}>{best.card.bank} · {best.card.network}</div>
+        <div style={s.bestCardName}>{best.card.name}</div>
+        <div style={s.savingsRow}>
+          <span style={{ ...s.savingsLabel, display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span> You save
+          </span>
+          <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>{formatRupee(best.totalValue)}</span>
+        </div>
+        <div style={s.breakdownBox}>
+          <div style={s.breakdownRow}><span style={s.breakdownKey}>Base Cashback</span><span style={s.breakdownVal}>{formatRupee(best.baseCashback)}</span></div>
+          {best.offerValue > 0 && (<><div style={s.breakdownDivider} /><div style={s.breakdownRow}><span style={s.breakdownKey}>Active Offer</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.offerValue)}</span></div></>)}
+          {best.milestoneValue > 0 && (<><div style={s.breakdownDivider} /><div style={s.breakdownRow}><span style={s.breakdownKey}>Milestone Progress</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.milestoneValue)}</span></div></>)}
+          <div style={s.breakdownDivider} />
+          <div style={s.breakdownRow}><span style={{ ...s.breakdownKey, fontWeight: 700, color: "#fff" }}>Total Value</span><span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupee(best.totalValue)}</span></div>
+        </div>
+        <button style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={handlePay}>
+          Pay with this Card →
+        </button>
+      </div>
+      {rest.length > 0 && (
+        <>
+          <div style={s.otherCardsLabel}>Other Cards</div>
+          {rest.map((r, i) => (
+            <div key={r.card.id} style={s.otherCard}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={s.otherCardRank}>#{i + 2} · {r.card.bank}</span>
+                <span style={s.otherCardName}>{r.card.name}</span>
+                {r.lossVsBest > 0 && <span style={s.otherCardLoss}>{formatRupee(r.lossVsBest)} less than best</span>}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                <span style={s.otherCardTotal}>{formatRupee(r.totalValue)}</span>
+                <span style={s.otherCardTotalLabel}>total value</span>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  ) : null;
+
+  // ── Camera permission error ────────────────────────────────────────────────
+  const CameraErrorBox = () => cameraError ? (
+    <div style={{ background: "#1a0a0a", border: "1px solid #f8717155", borderRadius: 12, padding: "14px 16px", marginTop: 4 }}>
+      <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>📵 Camera access denied</div>
+      <div style={{ color: "#a87a7a", fontSize: 12, lineHeight: 1.6 }}>
+        To enable camera for QR scanning:<br />
+        <strong style={{ color: "#c8a0a0" }}>Chrome Android:</strong> tap the lock icon in the address bar → Permissions → Camera → Allow<br />
+        <strong style={{ color: "#c8a0a0" }}>iPhone Safari/Chrome:</strong> Settings → Privacy → Camera → enable for this site
+      </div>
+      <button onClick={() => setCameraError(false)} style={{ marginTop: 10, background: "transparent", border: "1px solid #f8717155", borderRadius: 8, color: "#f87171", fontSize: 11, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+        Dismiss
+      </button>
+    </div>
+  ) : null;
+
+  // ── Idle: scan button + manual link ───────────────────────────────────────
+  if (scanState === "idle") {
+    return (
+      <>
+        <Header />
+        <div style={s.scrollArea}>
+          <div style={s.section}>
+            <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
+            <div style={s.formCard}>
+              {/* Big QR scan button */}
+              <div
+                onClick={() => { setCameraError(false); setScanState("camera"); }}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, background: `${GOLD}10`, border: `2px dashed ${GOLD_DIM}`, borderRadius: 14, padding: "28px 16px", cursor: "pointer", transition: "all 0.2s" }}
+              >
+                <div style={{ color: GOLD }}><QRIcon /></div>
+                <span style={{ color: GOLD, fontSize: 14, fontWeight: 800 }}>Tap to Scan &amp; Pay</span>
+                <span style={{ color: "#7a9bcc", fontSize: 11 }}>Opens rear camera · reads UPI QR codes</span>
+              </div>
+
+              <CameraErrorBox />
+
+              {/* Manual fallback */}
+              <button
+                onClick={() => setScanState("manual")}
+                style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 13, fontWeight: 600, padding: "4px 0", cursor: "pointer", textDecoration: "underline", textDecorationColor: "#3a5a8a", fontFamily: "inherit", alignSelf: "center" as const }}
+              >
+                Enter manually instead →
+              </button>
+            </div>
+          </div>
+
+          {!results && (
+            <div style={{ padding: "40px 20px", textAlign: "center" }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: `${GOLD}14`, border: `1px solid ${GOLD}33`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth={1.5} width={28} height={28}>
+                  <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+                </svg>
+              </div>
+              <div style={{ color: "#7a9bcc", fontSize: 14, fontWeight: 500 }}>Scan a QR code or enter a transaction manually</div>
+            </div>
+          )}
+          <ResultsBlock />
+        </div>
+      </>
+    );
+  }
+
+  // ── Camera: live viewfinder ────────────────────────────────────────────────
+  if (scanState === "camera") {
+    return (
+      <>
+        <Header />
+        <div style={s.scrollArea}>
+          <div style={s.section}>
+            <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
+            <div style={s.formCard}>
+              <QRScannerView
+                onScanned={handleQrScanned}
+                onClose={() => setScanState("idle")}
+                onPermissionDenied={() => { setCameraError(true); setScanState("idle"); }}
+              />
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Confirm: show scanned data + amount input ─────────────────────────────
+  if (scanState === "confirm") {
+    const humanCat = detectedCat ?? selectedHuman;
+    return (
+      <>
+        <Header />
+        <div style={s.scrollArea}>
+          <div style={s.section}>
+            <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
+            <div style={s.formCard}>
+
+              {/* Scanned badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 10, padding: "10px 14px" }}>
+                <span style={{ fontSize: 18 }}>✅</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ color: "#4ade80", fontSize: 12, fontWeight: 700 }}>QR Scanned Successfully</span>
+                  <span style={{ color: "#7a9bcc", fontSize: 11 }}>{scannedName || scannedVpa}</span>
+                  {scannedName && <span style={{ color: "#4a6a8a", fontSize: 10 }}>{scannedVpa}</span>}
+                </div>
+              </div>
+
+              {/* Category row */}
+              <div style={s.fieldWrapper}>
+                <label style={s.fieldLabel}>
+                  Category {detectedCat ? <span style={{ color: "#4ade80", fontWeight: 700 }}>✓ Auto-detected</span> : <span style={{ color: "#f97316" }}>— please select</span>}
+                </label>
+                {detectedCat ? (
+                  <div style={{ background: "#0a2010", border: "1px solid #22c55e44", borderRadius: 10, padding: "11px 14px", color: "#4ade80", fontSize: 14, fontWeight: 700 }}>
+                    {detectedCat}
+                  </div>
+                ) : (
+                  <select value={selectedHuman} onChange={(e) => setSelectedHuman(e.target.value)} style={s.select}>
+                    {HUMAN_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+              </div>
+
+              {/* Amount */}
+              <div style={s.fieldWrapper}>
+                <label style={s.fieldLabel}>Amount{confirmAmount ? " (from QR)" : ""}</label>
+                <div style={s.amountRow}>
+                  <span style={s.rupeeSymbol}>₹</span>
+                  <input
+                    type="number" placeholder="Enter amount" value={confirmAmount}
+                    onChange={(e) => setConfirmAmount(e.target.value)}
+                    style={s.amountInput} min={0} autoFocus
+                  />
+                </div>
+              </div>
+
+              <button
+                style={{ ...s.btn, transform: pressing ? "scale(0.97)" : "scale(1)" }}
+                onMouseDown={() => setPressing(true)}
+                onMouseUp={() => { setPressing(false); handleConfirmScore(); }}
+                onMouseLeave={() => setPressing(false)}
+                onTouchStart={() => setPressing(true)}
+                onTouchEnd={() => { setPressing(false); handleConfirmScore(); }}
+              >
+                Find Best Card
+              </button>
+
+              {/* Secondary actions */}
+              <div style={{ display: "flex", justifyContent: "center", gap: 20 }}>
+                <button onClick={() => { setResults(null); setScanState("camera"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a" }}>
+                  Scan again
+                </button>
+                <button onClick={() => { setResults(null); setScanState("manual"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a" }}>
+                  Enter manually instead
+                </button>
+              </div>
+            </div>
+          </div>
+          <ResultsBlock />
+        </div>
+      </>
+    );
+  }
+
+  // ── Manual: full form ──────────────────────────────────────────────────────
   return (
     <>
-      {/* Header */}
-      <div style={s.header}>
-        <div style={s.logoBox}><span style={s.logoText}>TIP</span></div>
-        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-          <span style={s.headerTitle}>TIP</span>
-          <span style={s.headerSub}>Your Financial Mitra</span>
-        </div>
-        {/* Demo badge */}
-        <div style={{
-          background: "#1e2d40", borderRadius: 8, padding: "4px 8px",
-          border: "1px solid #2a3f58", alignSelf: "flex-start", marginTop: 2,
-        }}>
-          <span style={{ fontSize: 9, fontWeight: 600, color: "#7a9bcc", letterSpacing: 0.5 }}>
-            DEMO MODE
-          </span>
-        </div>
-      </div>
-
+      <Header />
       <div style={s.scrollArea}>
-        {/* Form */}
         <div style={s.section}>
           <div style={s.sectionLabel}>📷 Scan &amp; Pay</div>
           <div style={s.formCard}>
 
-            {/* QR Scan button */}
-            <div
-              onClick={!scanning ? handleScan : undefined}
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center",
-                justifyContent: "center", gap: 10,
-                background: scanning ? `${GOLD}18` : `${GOLD}10`,
-                border: `2px dashed ${scanning ? GOLD : GOLD_DIM}`,
-                borderRadius: 14, padding: "22px 16px",
-                cursor: scanning ? "default" : "pointer",
-                transition: "all 0.2s",
-                position: "relative" as const,
-                overflow: "hidden",
-              }}
-            >
-              {scanning ? (
-                <>
-                  <div style={{
-                    width: 56, height: 56, borderRadius: "50%",
-                    border: `3px solid ${GOLD}`,
-                    animation: "tipPulse 0.8s ease-in-out infinite",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: "50%",
-                      background: `${GOLD}44`,
-                      animation: "tipPulse 0.8s ease-in-out infinite 0.2s",
-                    }} />
-                  </div>
-                  <span style={{ color: GOLD, fontSize: 13, fontWeight: 700, letterSpacing: 1 }}>
-                    Scanning...
-                  </span>
-                </>
-              ) : (
-                <>
-                  <div style={{ color: GOLD }}><QRIcon /></div>
-                  <span style={{ color: GOLD, fontSize: 13, fontWeight: 700 }}>Tap to Scan &amp; Pay</span>
-                  <span style={{ color: "#7a9bcc", fontSize: 11 }}>Auto-fills merchant &amp; finds best card</span>
-                </>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ flex: 1, height: 1, background: "#1e3a6a" }} />
-              <span style={{ color: "#3a5a8a", fontSize: 11, fontWeight: 600 }}>OR ENTER MANUALLY</span>
-              <div style={{ flex: 1, height: 1, background: "#1e3a6a" }} />
-            </div>
-
-            {/* Amount */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Amount</label>
               <div style={s.amountRow}>
                 <span style={s.rupeeSymbol}>₹</span>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  style={s.amountInput}
-                  min={0}
-                />
+                <input type="number" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} style={s.amountInput} min={0} />
               </div>
             </div>
 
-            {/* Merchant */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Merchant Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Swiggy, Amazon, Zomato"
-                value={merchant}
-                onChange={(e) => setMerchant(e.target.value)}
-                style={s.textInput}
-              />
+              <input type="text" placeholder="e.g. Swiggy, Amazon, Zomato" value={merchant} onChange={(e) => setMerchant(e.target.value)} style={s.textInput} />
             </div>
 
-            {/* Category */}
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                style={s.select}
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c.charAt(0).toUpperCase() + c.slice(1)}
-                  </option>
-                ))}
+              <select value={category} onChange={(e) => setCategory(e.target.value)} style={s.select}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
               </select>
             </div>
 
             <button
-              style={{
-                ...s.btn,
-                transform: pressing ? "scale(0.97)" : "scale(1)",
-                boxShadow: pressing ? `0 2px 8px ${GOLD}33` : `0 6px 20px ${GOLD}44`,
-              }}
+              style={{ ...s.btn, transform: pressing ? "scale(0.97)" : "scale(1)", boxShadow: pressing ? `0 2px 8px ${GOLD}33` : `0 6px 20px ${GOLD}44` }}
               onMouseDown={() => setPressing(true)}
               onMouseUp={() => { setPressing(false); handleScore(); }}
               onMouseLeave={() => setPressing(false)}
@@ -696,126 +972,13 @@ function PayScreen() {
             >
               Find Best Card
             </button>
+
+            <button onClick={() => { setResults(null); setScanState("idle"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a", alignSelf: "center" as const }}>
+              ← Back to scan
+            </button>
           </div>
         </div>
-
-        {/* Results */}
-        {results && best && (
-          <div style={s.resultsSection}>
-            {/* Best card */}
-            <div style={{
-              ...s.bestCardWrapper,
-              boxShadow: `0 0 20px rgba(201,168,76,0.6), 0 8px 32px ${GOLD}22`,
-            }}>
-              <div style={s.bestCardGlow} />
-
-              {/* Badge */}
-              <div style={{
-                display: "inline-flex", alignItems: "center", gap: 4,
-                background: `${GOLD}22`, borderRadius: 6, padding: "4px 10px",
-                marginBottom: 12,
-              }}>
-                <span style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.5 }}>
-                  ★ BEST CARD FOR THIS PAYMENT
-                </span>
-              </div>
-
-              <div style={s.bestCardBank}>{best.card.bank} · {best.card.network}</div>
-              <div style={s.bestCardName}>{best.card.name}</div>
-
-              <div style={s.savingsRow}>
-                <span style={{ ...s.savingsLabel, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span> You save
-                </span>
-                <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>
-                  {formatRupee(best.totalValue)}
-                </span>
-              </div>
-
-              <div style={s.breakdownBox}>
-                <div style={s.breakdownRow}>
-                  <span style={s.breakdownKey}>Base Cashback</span>
-                  <span style={s.breakdownVal}>{formatRupee(best.baseCashback)}</span>
-                </div>
-                {best.offerValue > 0 && (
-                  <>
-                    <div style={s.breakdownDivider} />
-                    <div style={s.breakdownRow}>
-                      <span style={s.breakdownKey}>Active Offer</span>
-                      <span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.offerValue)}</span>
-                    </div>
-                  </>
-                )}
-                {best.milestoneValue > 0 && (
-                  <>
-                    <div style={s.breakdownDivider} />
-                    <div style={s.breakdownRow}>
-                      <span style={s.breakdownKey}>Milestone Progress</span>
-                      <span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.milestoneValue)}</span>
-                    </div>
-                  </>
-                )}
-                <div style={s.breakdownDivider} />
-                <div style={s.breakdownRow}>
-                  <span style={{ ...s.breakdownKey, fontWeight: 700, color: "#fff" }}>Total Value</span>
-                  <span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupee(best.totalValue)}</span>
-                </div>
-              </div>
-
-              {/* Pay button */}
-              <button
-                style={{
-                  ...s.btn,
-                  marginTop: 14,
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                }}
-                onClick={handlePay}
-              >
-                Pay with this Card →
-              </button>
-            </div>
-
-            {/* Other cards */}
-            {rest.length > 0 && (
-              <>
-                <div style={s.otherCardsLabel}>Other Cards</div>
-                {rest.map((r, i) => (
-                  <div key={r.card.id} style={s.otherCard}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      <span style={s.otherCardRank}>#{i + 2} · {r.card.bank}</span>
-                      <span style={s.otherCardName}>{r.card.name}</span>
-                      {r.lossVsBest > 0 && (
-                        <span style={s.otherCardLoss}>{formatRupee(r.lossVsBest)} less than best</span>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                      <span style={s.otherCardTotal}>{formatRupee(r.totalValue)}</span>
-                      <span style={s.otherCardTotalLabel}>total value</span>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-
-        {!results && !scanning && (
-          <div style={{ padding: "40px 20px", textAlign: "center" }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: 18,
-              background: `${GOLD}14`, border: `1px solid ${GOLD}33`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              margin: "0 auto 16px",
-            }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth={1.5} width={28} height={28}>
-                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
-              </svg>
-            </div>
-            <div style={{ color: "#7a9bcc", fontSize: 14, fontWeight: 500 }}>
-              Scan a QR code or enter a transaction above
-            </div>
-          </div>
-        )}
+        <ResultsBlock />
       </div>
     </>
   );
