@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { requestOtp, verifyOtp, setToken } from "./lib/apiClient";
 
 const NAVY      = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -531,22 +532,48 @@ function LoginScreen({ onVerified }) {
   const [otp, setOtp] = useState("");
   const [pressing, setPressing] = useState(false);
   const [shaking, setShaking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   function shake() {
     setShaking(true);
     setTimeout(() => setShaking(false), 400);
   }
 
-  function handleSendOtp() {
+  async function handleSendOtp() {
+    if (loading) return;
     if (phone.replace(/\D/g, "").length < 10) { shake(); return; }
-    setPhase("otp");
-    setOtp("");
+    setErrorMsg("");
+    setLoading(true);
+    try {
+      await requestOtp(phone);
+      setPhase("otp");
+      setOtp("");
+    } catch (err) {
+      setErrorMsg(err?.message || "Could not send OTP. Please try again.");
+      shake();
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function handleVerify() {
+  async function handleVerify() {
+    if (loading) return;
     if (otp.length < 4) { shake(); return; }
-    // Accept any 4-digit code — mock auth
-    onVerified();
+    setErrorMsg("");
+    setLoading(true);
+    try {
+      const response = await verifyOtp(phone, otp);
+      if (response?.token) {
+        setToken(response.token);
+      }
+      onVerified();
+    } catch (err) {
+      setErrorMsg(err?.message || "Incorrect OTP. Please try again.");
+      shake();
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -594,17 +621,25 @@ function LoginScreen({ onVerified }) {
 
             <div style={s.resendRow}>
               <span style={s.resendLabel}>Didn't receive it?</span>
-              <span style={s.resendLink} onClick={() => { setOtp(""); }}>Resend OTP</span>
+              <span style={s.resendLink} onClick={() => { setOtp(""); handleSendOtp(); }}>Resend OTP</span>
             </div>
           </>
+        )}
+
+        {errorMsg && (
+          <p style={{ color: "#f87171", fontSize: 12, textAlign: "center", marginTop: 14, fontWeight: 600 }}>
+            {errorMsg}
+          </p>
         )}
       </div>
 
       {/* Bottom action */}
       <div style={{ ...s.bottomArea, gap: 10 }}>
         <button
+          disabled={loading}
           style={{
             ...s.goldBtn,
+            opacity: loading ? 0.7 : 1,
             transform: pressing ? "scale(0.97)" : "scale(1)",
             boxShadow: pressing
               ? `0 2px 8px ${GOLD}33`
@@ -618,7 +653,7 @@ function LoginScreen({ onVerified }) {
           onTouchStart={() => setPressing(true)}
           onTouchEnd={() => { setPressing(false); phase === "phone" ? handleSendOtp() : handleVerify(); }}
         >
-          {phase === "phone" ? "Send OTP" : "Verify & Continue →"}
+          {loading ? "Please wait..." : phase === "phone" ? "Send OTP" : "Verify & Continue →"}
         </button>
 
         {phase === "phone" && (

@@ -8,6 +8,7 @@ import Dashboard from "./Dashboard.jsx";
 import Rewards from "./Rewards.jsx";
 // @ts-ignore
 import Onboarding from "./Onboarding.jsx";
+import { getToken } from "./lib/apiClient";
 // @ts-ignore
 import PitchSummary from "./PitchSummary.jsx";
 
@@ -1217,7 +1218,7 @@ function PayScreen() {
 
 export default function App() {
   const [onboarded, setOnboarded] = useState<boolean>(
-    () => typeof window !== "undefined" && localStorage.getItem("tip_onboarded") === "1"
+    () => typeof window !== "undefined" && !!getToken()
   );
   const [activeTab, setActiveTab] = useState<Tab>("pay");
 
