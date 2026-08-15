@@ -8,7 +8,7 @@ import Rewards from "./Rewards.jsx";
 import Onboarding from "./Onboarding.jsx";
 import { getToken, getRecommendation } from "./lib/apiClient";
 // @ts-ignore
-import PitchSummary from "./PitchSummary.jsx";
+import Profile from "./Profile.jsx";
 
 const NAVY = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -1299,6 +1299,12 @@ export default function App() {
     setOnboarded(true);
   }
 
+  function handleLogout() {
+    localStorage.removeItem("tip_onboarded");
+    setActiveTab("pay");
+    setOnboarded(false);
+  }
+
   if (!onboarded) {
     return <Onboarding onComplete={completeOnboarding} />;
   }
@@ -1322,7 +1328,7 @@ export default function App() {
       case "profile":
         return (
           <div style={s.scrollArea}>
-            <PitchSummary />
+            <Profile onLogout={handleLogout} />
           </div>
         );
     }

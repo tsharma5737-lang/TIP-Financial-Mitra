@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { requestOtp, verifyOtp, setToken } from "./lib/apiClient";
+import { requestOtp, verifyOtp, setToken, setUser } from "./lib/apiClient";
 
 const NAVY      = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -566,6 +566,9 @@ function LoginScreen({ onVerified }) {
       const response = await verifyOtp(phone, otp);
       if (response?.token) {
         setToken(response.token);
+      }
+      if (response?.user) {
+        setUser(response.user);
       }
       onVerified();
     } catch (err) {
