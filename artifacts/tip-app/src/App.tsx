@@ -1098,6 +1098,9 @@ function PayScreen() {
                 >
                   Check Best Card Anyway →
                 </button>
+                <div style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", textAlign: "center", lineHeight: 1.5, padding: "0 8px" }}>
+                  *TIP provides card benefit information for informational purposes only. Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits directly with your bank.
+                </div>
 
                 <button
                   onClick={handleDone}
@@ -1204,6 +1207,9 @@ function PayScreen() {
               >
                 Find Best Card →
               </button>
+              <div style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", textAlign: "center", lineHeight: 1.5, padding: "0 8px" }}>
+                *TIP provides card benefit information for informational purposes only. Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits directly with your bank.
+              </div>
 
               {/* Secondary actions */}
               <div style={{ display: "flex", justifyContent: "center", gap: 20 }}>
@@ -1261,6 +1267,9 @@ function PayScreen() {
             >
               Find Best Card
             </button>
+            <div style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", textAlign: "center", lineHeight: 1.5, padding: "0 8px" }}>
+              *TIP provides card benefit information for informational purposes only. Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits directly with your bank.
+            </div>
 
             <button onClick={() => { setResults(null); setScanState("idle"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a", alignSelf: "center" as const }}>
               ← Back to scan

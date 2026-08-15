@@ -691,59 +691,7 @@ function LoginScreen({ onVerified }) {
 // ─── Onboarding orchestrator ──────────────────────────────────────────────────
 
 // Screens: "hero" → "feat0" → "feat1" → "login"
-const SCREENS = ["hero", "feat0", "feat1", "login", "acknowledge"];
-
-// ─── Screen: Mandatory acknowledgement (shown once, right after login) ───────
-
-function AcknowledgeScreen({ onContinue }) {
-  const [pressing, setPressing] = useState(false);
-  return (
-    <div style={s.slide}>
-      <div style={{ ...s.hero, justifyContent: "center", paddingTop: 40 }}>
-        <div style={{
-          position: "absolute", top: "10%", left: "50%", transform: "translateX(-50%)",
-          width: 280, height: 280, borderRadius: "50%",
-          background: `radial-gradient(circle, ${GOLD}14 0%, transparent 70%)`,
-          pointerEvents: "none",
-        }} />
-
-        <div style={{ ...s.logoRing, width: 56, height: 56, marginBottom: 20 }}>
-          <span style={{ ...s.logoMark, fontSize: 20 }}>i</span>
-        </div>
-
-        <h1 style={{ ...s.heroTagline, fontSize: 22 }}>Before you get started</h1>
-
-        <div style={{
-          marginTop: 24, background: "#112240", border: `1.5px solid ${GOLD}44`,
-          borderRadius: 16, padding: "20px 22px", maxWidth: 340,
-        }}>
-          <p style={{ color: "#c8daf0", fontSize: 14, lineHeight: 1.7, fontWeight: 500, margin: 0 }}>
-            TIP provides card benefit information for informational purposes only.
-            Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits
-            directly with your bank.
-          </p>
-        </div>
-      </div>
-
-      <div style={s.bottomArea}>
-        <button
-          style={{
-            ...s.goldBtn,
-            transform: pressing ? "scale(0.97)" : "scale(1)",
-            boxShadow: pressing ? `0 2px 8px ${GOLD}33` : `0 6px 24px ${GOLD}44`,
-          }}
-          onMouseDown={() => setPressing(true)}
-          onMouseUp={() => { setPressing(false); onContinue(); }}
-          onMouseLeave={() => setPressing(false)}
-          onTouchStart={() => setPressing(true)}
-          onTouchEnd={() => { setPressing(false); onContinue(); }}
-        >
-          I Understand, Continue →
-        </button>
-      </div>
-    </div>
-  );
-}
+const SCREENS = ["hero", "feat0", "feat1", "login"];
 
 export default function Onboarding({ onComplete }) {
   const [screen, setScreen] = useState("hero");
@@ -760,7 +708,6 @@ export default function Onboarding({ onComplete }) {
   if (screen === "hero")   return <HeroSlide onNext={advance} />;
   if (screen === "feat0")  return <FeatureSlide slideIndex={0} onNext={advance} onSkip={skipToLogin} />;
   if (screen === "feat1")  return <FeatureSlide slideIndex={1} onNext={advance} onSkip={skipToLogin} />;
-  if (screen === "login")  return <LoginScreen onVerified={advance} />;
-  if (screen === "acknowledge") return <AcknowledgeScreen onContinue={onComplete} />;
+  if (screen === "login")  return <LoginScreen onVerified={onComplete} />;
   return null;
 }
