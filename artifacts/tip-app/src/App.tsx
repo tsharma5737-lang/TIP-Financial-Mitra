@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { Html5QrcodeScanner, Html5QrcodeScanType } from "html5-qrcode";
 // @ts-ignore
-import { scoreCards } from "./engine/scoringEngine.js";
-// @ts-ignore
 import Dashboard from "./Dashboard.jsx";
 // @ts-ignore
 import Rewards from "./Rewards.jsx";
 // @ts-ignore
 import Onboarding from "./Onboarding.jsx";
-import { getToken } from "./lib/apiClient";
+import { getToken, getRecommendation } from "./lib/apiClient";
 // @ts-ignore
 import PitchSummary from "./PitchSummary.jsx";
 
@@ -27,21 +25,25 @@ const CATEGORIES = [
 type Tab = "pay" | "cards" | "rewards" | "profile";
 
 type ScoredCard = {
-  card: {
-    id: string;
-    name: string;
-    bank: string;
-    network: string;
-    annualFee: number;
-    color: string;
-    accentColor: string;
-  };
-  baseCashback: number;
-  offerValue: number;
-  milestoneValue: number;
-  totalValue: number;
-  breakdown: string;
-  lossVsBest: number;
+  card_id: string;
+  bank_name: string;
+  card_name: string;
+  rupee_value: number;
+  base_rupee_value: number;
+  applied_offer?: {
+    discount_type: string;
+    offer_value: number;
+    conditions?: string;
+  } | null;
+  value_comparison?: {
+    direct_value: number;
+    combined_value: number;
+    extra_from_offer: number;
+    message: string;
+  } | null;
+  rank: number;
+  is_best: boolean;
+  rupee_loss_vs_best: number;
 };
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
@@ -721,6 +723,9 @@ function PayScreen() {
   const [results, setResults]     = useState<ScoredCard[] | null>(null);
   const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
   const [pressing, setPressing]   = useState(false);
+  const [scoring, setScoring]     = useState(false);
+  const [scoreError, setScoreError] = useState("");
+  const [disclaimer, setDisclaimer] = useState("");
 
   // Scanner state machine
   const [scanState, setScanState] = useState<ScanState>("idle");
@@ -742,8 +747,25 @@ function PayScreen() {
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("dining");
 
-  function runScore(amt: number, merch: string, cat: string) {
-    setResults(scoreCards({ amount: amt, merchant: merch || "Other", category: cat }) as ScoredCard[]);
+  const DEFAULT_DISCLAIMER = "Benefits shown are based on published rates and may vary. Verify with your bank before paying.";
+
+  async function runScore(amt: number, merch: string, vpa?: string) {
+    setScoring(true);
+    setScoreError("");
+    setResults(null);
+    try {
+      const data = await getRecommendation({
+        merchant_name: merch || undefined,
+        vpa: vpa || undefined,
+        amount: amt,
+      });
+      setResults((data.recommendations ?? []) as ScoredCard[]);
+      setDisclaimer(data.disclaimer || DEFAULT_DISCLAIMER);
+    } catch (err: any) {
+      setScoreError(err?.message || "Could not get a recommendation. Please check your connection and try again.");
+    } finally {
+      setScoring(false);
+    }
   }
 
   // Called when html5-qrcode successfully reads a QR
@@ -768,30 +790,27 @@ function PayScreen() {
   function handleConfirmScore() {
     const amt = parseFloat(confirmAmount);
     if (!amt || amt <= 0) return;
-    const humanCat = detectedCat ?? selectedHuman;
-    const engCat   = toEngineCategory(scannedVpa, humanCat);
-    const merch    = scannedName || scannedVpa.split("@")[0];
+    const merch = scannedName || scannedVpa.split("@")[0];
     setMerchant(merch);
     setAmount(String(amt));
-    setCategory(engCat);
-    runScore(amt, merch, engCat);
+    runScore(amt, merch, scannedVpa);
   }
 
-  // Manual entry → score
+  // Manual entry → score (treated as an online/card payment — no vpa)
   function handleScore() {
     const parsed = parseFloat(amount);
     if (!parsed || parsed <= 0) return;
-    runScore(parsed, merchant.trim(), category);
+    runScore(parsed, merchant.trim());
   }
 
   function handlePay() {
-    const best = results?.[0];
-    if (!best) return;
+    const bestCard = results?.[0];
+    if (!bestCard) return;
     setPaySuccess({
       merchant: merchant || scannedName || scannedVpa.split("@")[0],
       amount: parseFloat(amount || confirmAmount),
-      cardName: best.card.name,
-      saved: best.totalValue,
+      cardName: bestCard.card_name,
+      saved: bestCard.rupee_value,
     });
   }
 
@@ -857,52 +876,80 @@ function PayScreen() {
   }
 
   // ── Results block (shared) ─────────────────────────────────────────────────
-  const ResultsBlock = () => results && best ? (
-    <div style={s.resultsSection}>
-      <div style={{ ...s.bestCardWrapper, boxShadow: `0 0 20px rgba(201,168,76,0.6),0 8px 32px ${GOLD}22` }}>
-        <div style={s.bestCardGlow} />
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `${GOLD}22`, borderRadius: 6, padding: "4px 10px", marginBottom: 12 }}>
-          <span style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.5 }}>★ BEST CARD FOR THIS PAYMENT</span>
+  const ResultsBlock = () => {
+    if (scoring) {
+      return (
+        <div style={{ padding: "40px 20px", textAlign: "center" }}>
+          <div style={{ color: "#7a9bcc", fontSize: 14, fontWeight: 500 }}>Getting your recommendation…</div>
         </div>
-        <div style={s.bestCardBank}>{best.card.bank} · {best.card.network}</div>
-        <div style={s.bestCardName}>{best.card.name}</div>
-        <div style={s.savingsRow}>
-          <span style={{ ...s.savingsLabel, display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span> You save
-          </span>
-          <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>{formatRupee(best.totalValue)}</span>
+      );
+    }
+    if (scoreError) {
+      return (
+        <div style={{ padding: "24px 20px", textAlign: "center" }}>
+          <div style={{ color: "#f87171", fontSize: 13, fontWeight: 600 }}>{scoreError}</div>
         </div>
-        <div style={s.breakdownBox}>
-          <div style={s.breakdownRow}><span style={s.breakdownKey}>Base Cashback</span><span style={s.breakdownVal}>{formatRupee(best.baseCashback)}</span></div>
-          {best.offerValue > 0 && (<><div style={s.breakdownDivider} /><div style={s.breakdownRow}><span style={s.breakdownKey}>Active Offer</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.offerValue)}</span></div></>)}
-          {best.milestoneValue > 0 && (<><div style={s.breakdownDivider} /><div style={s.breakdownRow}><span style={s.breakdownKey}>Milestone Progress</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.milestoneValue)}</span></div></>)}
-          <div style={s.breakdownDivider} />
-          <div style={s.breakdownRow}><span style={{ ...s.breakdownKey, fontWeight: 700, color: "#fff" }}>Total Value</span><span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupee(best.totalValue)}</span></div>
+      );
+    }
+    if (!results || !best) return null;
+
+    return (
+      <div style={s.resultsSection}>
+        <div style={{ ...s.bestCardWrapper, boxShadow: `0 0 20px rgba(201,168,76,0.6),0 8px 32px ${GOLD}22` }}>
+          <div style={s.bestCardGlow} />
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `${GOLD}22`, borderRadius: 6, padding: "4px 10px", marginBottom: 12 }}>
+            <span style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.5 }}>★ BEST CARD FOR THIS PAYMENT</span>
+          </div>
+          <div style={s.bestCardBank}>{best.bank_name}</div>
+          <div style={s.bestCardName}>{best.card_name}</div>
+          <div style={s.savingsRow}>
+            <span style={{ ...s.savingsLabel, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span> You save
+            </span>
+            <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>{formatRupee(best.rupee_value)}</span>
+          </div>
+          <div style={s.breakdownBox}>
+            <div style={s.breakdownRow}><span style={s.breakdownKey}>Base Reward</span><span style={s.breakdownVal}>{formatRupee(best.base_rupee_value)}</span></div>
+            {best.applied_offer && (
+              <>
+                <div style={s.breakdownDivider} />
+                <div style={s.breakdownRow}><span style={s.breakdownKey}>Active Offer</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.applied_offer.offer_value)}</span></div>
+              </>
+            )}
+            <div style={s.breakdownDivider} />
+            <div style={s.breakdownRow}><span style={{ ...s.breakdownKey, fontWeight: 700, color: "#fff" }}>Total Value</span><span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupee(best.rupee_value)}</span></div>
+          </div>
+          {best.value_comparison?.message && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#7a9bcc", lineHeight: 1.5 }}>{best.value_comparison.message}</div>
+          )}
+          <button style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={handlePay}>
+            Pay with this Card →
+          </button>
         </div>
-        <button style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={handlePay}>
-          Pay with this Card →
-        </button>
+        {rest.length > 0 && (
+          <>
+            <div style={s.otherCardsLabel}>Other Cards</div>
+            {rest.map((r) => (
+              <div key={r.card_id} style={s.otherCard}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={s.otherCardRank}>#{r.rank} · {r.bank_name}</span>
+                  <span style={s.otherCardName}>{r.card_name}</span>
+                  {r.rupee_loss_vs_best > 0 && <span style={s.otherCardLoss}>{formatRupee(r.rupee_loss_vs_best)} less than best</span>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                  <span style={s.otherCardTotal}>{formatRupee(r.rupee_value)}</span>
+                  <span style={s.otherCardTotalLabel}>total value</span>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+        <div style={{ marginTop: 14, fontSize: 11, color: "#4a6a9a", textAlign: "center", lineHeight: 1.5 }}>
+          {disclaimer || DEFAULT_DISCLAIMER}
+        </div>
       </div>
-      {rest.length > 0 && (
-        <>
-          <div style={s.otherCardsLabel}>Other Cards</div>
-          {rest.map((r, i) => (
-            <div key={r.card.id} style={s.otherCard}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={s.otherCardRank}>#{i + 2} · {r.card.bank}</span>
-                <span style={s.otherCardName}>{r.card.name}</span>
-                {r.lossVsBest > 0 && <span style={s.otherCardLoss}>{formatRupee(r.lossVsBest)} less than best</span>}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                <span style={s.otherCardTotal}>{formatRupee(r.totalValue)}</span>
-                <span style={s.otherCardTotalLabel}>total value</span>
-              </div>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  ) : null;
+    );
+  };
 
   // ── Idle: scan button + manual link ───────────────────────────────────────
   if (scanState === "idle") {
