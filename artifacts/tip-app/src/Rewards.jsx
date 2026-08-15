@@ -28,6 +28,12 @@ const s = {
   totalLabel: { fontSize: 9, color: GOLD_DIM, letterSpacing: 1.2, textTransform: "uppercase" },
   totalValue: { fontSize: 18, fontWeight: 900, color: GOLD, letterSpacing: "-0.5px" },
   disclaimerLine: { padding: "6px 16px 0", fontSize: 9, color: "#4a6a9a", fontStyle: "italic" },
+  noticeBox: {
+    margin: "12px 16px 0", background: `${GOLD}0d`, border: `1px solid ${GOLD}33`,
+    borderRadius: 12, padding: "10px 12px", display: "flex", gap: 8, alignItems: "flex-start",
+  },
+  noticeIcon: { fontSize: 14, flexShrink: 0, marginTop: 1 },
+  noticeText: { fontSize: 11, color: "#b0c8e8", lineHeight: 1.5, fontWeight: 500 },
 
   sectionRow: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 10px" },
   sectionTitle: { fontSize: 11, fontWeight: 700, color: GOLD, letterSpacing: 2, textTransform: "uppercase" },
@@ -84,17 +90,10 @@ function RewardTile({ card, index }) {
         </div>
       </div>
 
-      <div style={s.tipBox(accent)}>
-        <span style={s.tipIcon}>💡</span>
-        <span style={s.tipText}>
-          {isCashback
-            ? "This card gives automatic cashback — credited directly, no redemption needed."
-            : "Points tracking tool coming soon — once your bank is linked, we'll show your exact balance and best redemption option."}
-        </span>
-      </div>
-
       <div style={s.tileBottom}>
-        <span style={s.redeemNote}>Estimated from your tracked spending, using this card's published rates.</span>
+        <span style={{ ...s.redeemNote, color: isCashback ? "#4ade80" : "#7a9bcc" }}>
+          {isCashback ? "Automatic cashback" : "Points-based rewards"}
+        </span>
         {!isCashback && <button style={s.redeemBtn} disabled>Redeem</button>}
       </div>
     </div>
@@ -163,6 +162,16 @@ export default function Rewards() {
         </div>
       </div>
       <div style={s.disclaimerLine}>{disclaimer}</div>
+
+      <div style={s.noticeBox}>
+        <span style={s.noticeIcon}>💡</span>
+        <span style={s.noticeText}>
+          Values shown are estimated from your tracked spending using each card's published rates —
+          not a live bank balance. Points value is approximate and redemption rates vary by method
+          and may change. Once bank-linking is live, we'll show your exact balance and best
+          redemption option for each card.
+        </span>
+      </div>
 
       <div style={s.sectionRow}>
         <span style={s.sectionTitle}>⚡ Card Rewards</span>
