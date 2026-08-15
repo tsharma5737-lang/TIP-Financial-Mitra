@@ -302,21 +302,21 @@ const s = {
   },
   otpRow: {
     display: "flex",
-    gap: 12,
+    gap: 8,
     justifyContent: "center",
     marginBottom: 24,
     width: "100%",
   },
   otpBox: (filled, focused) => ({
-    width: 60,
-    height: 64,
+    width: 48,
+    height: 56,
     background: NAVY_CARD,
     border: `2px solid ${focused ? GOLD : filled ? GOLD_DIM : "#1e3a6a"}`,
-    borderRadius: 14,
+    borderRadius: 12,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: 900,
     color: filled ? GOLD_LIGHT : "#4a6a9a",
     transition: "border-color 0.2s",
@@ -468,14 +468,14 @@ function OtpInputs({ value, onChange, shaking }) {
   const [focused, setFocused] = useState(false);
 
   // Which box is the "active" cursor position
-  const cursorPos = Math.min(value.length, 3);
+  const cursorPos = Math.min(value.length, 5);
 
   function focusHidden() {
     hiddenRef.current?.focus();
   }
 
   function handleChange(e) {
-    const raw = e.target.value.replace(/\D/g, "").slice(0, 4);
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 6);
     onChange(raw);
   }
 
@@ -493,7 +493,7 @@ function OtpInputs({ value, onChange, shaking }) {
         ref={hiddenRef}
         type="tel"
         inputMode="numeric"
-        maxLength={4}
+        maxLength={6}
         value={value}
         onChange={handleChange}
         onFocus={() => setFocused(true)}
@@ -512,7 +512,7 @@ function OtpInputs({ value, onChange, shaking }) {
       />
 
       {/* Visual digit boxes */}
-      {[0, 1, 2, 3].map((i) => (
+      {[0, 1, 2, 3, 4, 5].map((i) => (
         <div
           key={i}
           style={s.otpBox(!!value[i], focused && cursorPos === i)}
@@ -559,7 +559,7 @@ function LoginScreen({ onVerified }) {
 
   async function handleVerify() {
     if (loading) return;
-    if (otp.length < 4) { shake(); return; }
+    if (otp.length < 6) { shake(); return; }
     setErrorMsg("");
     setLoading(true);
     try {
@@ -613,7 +613,7 @@ function LoginScreen({ onVerified }) {
           <>
             <h2 style={s.otpHeading}>Enter OTP</h2>
             <p style={s.otpSub}>
-              We sent a 4-digit code to<br />
+              We sent a 6-digit code to<br />
               <strong style={{ color: "#fff" }}>+91 {phone}</strong>
             </p>
 
