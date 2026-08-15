@@ -1,6 +1,6 @@
 // The one place that knows how to talk to the real TIP server.
-// If the server address ever changes (e.g. to HTTPS), only this one line needs updating.
-const API_BASE_URL = "http://3.110.153.37:3000";
+// If the server address ever changes again, only this one line needs updating.
+const API_BASE_URL = "https://api.creafintech.com";
 
 const TOKEN_KEY = "tip_token";
 
