@@ -749,6 +749,10 @@ function PayScreen() {
   const [category, setCategory] = useState("dining");
 
   const DEFAULT_DISCLAIMER = "Benefits shown are based on published rates and may vary. Verify with your bank before paying.";
+  // ⚠️ PENDING LEGAL REVIEW (flagged 15-Aug-2026): wording changed from the original
+  // required text at the founder's request. Not yet confirmed by legal counsel/CA -
+  // revert to the original wording if review doesn't approve this version.
+  const INFO_DISCLAIMER = "*TIP provides benefits recommendation basis the bank disclosures, which may change anytime at bank's discretion. Kindly verify with bank & your statement.";
 
   async function runScore(amt: number, merch: string, vpa?: string) {
     setScoring(true);
@@ -1099,7 +1103,7 @@ function PayScreen() {
                   Check Best Card Anyway →
                 </button>
                 <div style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", textAlign: "center", lineHeight: 1.5, padding: "0 8px" }}>
-                  *TIP provides card benefit information for informational purposes only. Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits directly with your bank.
+                  {INFO_DISCLAIMER}
                 </div>
 
                 <button
@@ -1208,7 +1212,7 @@ function PayScreen() {
                 Find Best Card →
               </button>
               <div style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", textAlign: "center", lineHeight: 1.5, padding: "0 8px" }}>
-                *TIP provides card benefit information for informational purposes only. Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits directly with your bank.
+                {INFO_DISCLAIMER}
               </div>
 
               {/* Secondary actions */}
@@ -1268,7 +1272,7 @@ function PayScreen() {
               Find Best Card
             </button>
             <div style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", textAlign: "center", lineHeight: 1.5, padding: "0 8px" }}>
-              *TIP provides card benefit information for informational purposes only. Creafin Tech Pvt Ltd makes no guarantee of accuracy. Verify all benefits directly with your bank.
+              {INFO_DISCLAIMER}
             </div>
 
             <button onClick={() => { setResults(null); setScanState("idle"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a", alignSelf: "center" as const }}>
