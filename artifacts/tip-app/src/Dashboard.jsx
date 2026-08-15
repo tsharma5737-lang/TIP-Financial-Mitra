@@ -1,4 +1,5 @@
-import CARDS from "./data/cardData.js";
+import { useState, useEffect } from "react";
+import { getInsightsDashboard } from "./lib/apiClient";
 
 const NAVY      = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -7,221 +8,49 @@ const GOLD      = "#C9A84C";
 const GOLD_LIGHT = "#e0c06a";
 const GOLD_DIM  = "#8a6f32";
 
-// ─── Derived portfolio stats ────────────────────────────────────────────────
-
-function getBestCategory(card) {
-  let best = { key: "other", rate: 0 };
-  for (const [key, val] of Object.entries(card.categories)) {
-    if (val.cashback > best.rate) best = { key, rate: val.cashback };
-  }
-  return best;
-}
-
-function getNextMilestone(card) {
-  if (!card.milestones || card.milestones.length === 0) return null;
-  return card.milestones
-    .filter((m) => m.spendTarget > card.currentSpend)
-    .sort((a, b) => a.spendTarget - b.spendTarget)[0] || null;
-}
-
-function calcAvgCashbackRate(card) {
-  const vals = Object.values(card.categories).map((c) => c.cashback);
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
-}
-
-function estimateMonthlySavings(card) {
-  const monthly = card.currentSpend / 12;
-  const avg = calcAvgCashbackRate(card);
-  return (monthly * avg) / 100;
-}
-
-const totalSpend       = CARDS.reduce((s, c) => s + c.currentSpend, 0);
-const totalSavedMonth  = CARDS.reduce((s, c) => s + estimateMonthlySavings(c), 0);
-const totalRewardsValue = CARDS.reduce((s, c) => {
-  const best = getBestCategory(c);
-  return s + (c.currentSpend * best.rate) / 100 * c.rewardPointValue;
-}, 0);
-const totalLosses = totalSavedMonth * 0.22;
-
-// ─── Efficiency Score engine ─────────────────────────────────────────────────
-
-/** Average cashback of the top-2 categories */
-function getTop2AvgRate(card) {
-  const sorted = Object.values(card.categories)
-    .map((c) => c.cashback)
-    .sort((a, b) => b - a);
-  const top2 = sorted.slice(0, 2);
-  return top2.reduce((a, b) => a + b, 0) / (top2.length || 1);
-}
-
-/** Sum of rewardValue for milestones the user has already passed */
-function unlockedMilestoneValue(card) {
-  if (!card.milestones) return 0;
-  return card.milestones
-    .filter((m) => m.spendTarget <= card.currentSpend)
-    .reduce((s, m) => s + (m.rewardValue || 0), 0);
-}
-
-/** Annual benefit value extracted from this card */
-function calcBenefits(card) {
-  const cashback = (card.currentSpend * getTop2AvgRate(card)) / 100;
-  const lounge   = (card.loungeAccess?.domestic || 0) * 500
-                 + (card.loungeAccess?.international || 0) * 1500;
-  const milestones = unlockedMilestoneValue(card);
-  return cashback + lounge + milestones;
-}
-
-/** Component 1: Fee Value Score (0–25) */
-function feeValueScore(card) {
-  if (card.annualFee === 0) return 25;
-  const ratio = calcBenefits(card) / card.annualFee;
-  return Math.min(25, ratio * 25);
-}
-
-/** Component 2: Spend Alignment Score (0–25) */
-function spendAlignmentScore(card) {
-  const waiver = card.annualFeeWaiverSpend;
-  if (!waiver) return 20;                              // no waiver target
-  const pct = card.currentSpend / waiver;
-  if (pct > 0.5) return 25;
-  if (pct > 0.25) return 15;
-  return 5;
-}
-
-/** Component 3: Milestone Health Score (0–25) */
-function milestoneHealthScore(card) {
-  if (!card.milestones || card.milestones.length === 0) return 5;
-  const allDone = card.milestones.every((m) => m.spendTarget <= card.currentSpend);
-  if (allDone) return 25;
-  const waiver = card.annualFeeWaiverSpend;
-  if (waiver > 0) {
-    const pct = card.currentSpend / waiver;
-    if (pct > 0.6) return 20;
-    if (pct > 0.3) return 12;
-  }
-  return 5;
-}
-
-/** Component 4: Rewards Efficiency Score (0–25) */
-function rewardsEfficiencyScore(card) {
-  const v = card.rewardPointValue;
-  if (v >= 1.00) return 25;
-  if (v >= 0.50) return 18;
-  if (v >= 0.30) return 12;
-  if (v >= 0.25) return 8;
-  return 5;
-}
-
-/** Final efficiency score (0–100) */
-function calcEfficiencyScore(card) {
-  return Math.round(
-    feeValueScore(card) +
-    spendAlignmentScore(card) +
-    milestoneHealthScore(card) +
-    rewardsEfficiencyScore(card)
-  );
-}
-
-/** Score metadata: color, label */
-function scoreAppearance(score) {
-  if (score >= 75) return { bg: "#4ade80", textColor: "#052010", label: "Excellent" };
-  if (score >= 50) return { bg: GOLD,      textColor: "#0a1628", label: "Good" };
-  if (score >= 25) return { bg: "#f97316", textColor: "#fff",    label: "Underutilised" };
-  return               { bg: "#f87171",    textColor: "#fff",    label: "Review card" };
-}
-
-/** Insight line below the badge */
-function insightText(card, score) {
-  const top = getBestCategory(card);
-  if (score < 40)  return "⚠️ Paying more in fees than you're earning in benefits";
-  if (score <= 60) return `📈 Moderate value — shift more ${top.key} spend here`;
-  if (score <= 80) return "✅ Good card for your spend pattern";
-  return                  "🏆 This card is working hard for you";
-}
-
-// Pre-compute scores for all cards once
-const SCORES = Object.fromEntries(CARDS.map((c) => [c.id, calcEfficiencyScore(c)]));
-const avgScore = CARDS.length
-  ? Math.round(CARDS.reduce((s, c) => s + SCORES[c.id], 0) / CARDS.length)
-  : 0;
-const weakest = CARDS.length
-  ? CARDS.reduce((a, b) => SCORES[a.id] <= SCORES[b.id] ? a : b)
-  : null;
-const weakestScore    = weakest ? SCORES[weakest.id] : 0;
-const weakestBenefits = weakest ? Math.round(calcBenefits(weakest)) : 0;
-
-// ─── Annualised Benefit Calculator ──────────────────────────────────────────
-
-function calculateAnnualisedBenefit(card) {
-  // Extrapolate from 6-month data to 12 months
-  const annualSpend = (card.currentSpend / 6) * 12;
-
-  // Top cashback rate across all categories
-  const topCatRate = Math.max(
-    ...Object.values(card.categories).map((c) => c.cashback)
-  );
-
-  // 60% of annual spend in best categories
-  const annualCashback = (annualSpend * 0.6 * topCatRate) / 100;
-
-  // 40% earns base reward points
-  const annualPoints = annualSpend * 0.4 * 0.01 * card.rewardPointValue;
-
-  // Lounge access value
-  const annualLounge =
-    (card.loungeAccess?.domestic || 0) * 500 +
-    (card.loungeAccess?.international || 0) * 1500;
-
-  // Milestone value for milestones unlocked at annual spend level
-  const annualMilestone = (card.milestones || [])
-    .filter((m) => m.spendTarget <= annualSpend)
-    .reduce((s, m) => s + (m.rewardValue || 0), 0);
-
-  // Quarterly offers × 4
-  const annualOffer =
-    (card.activeOffers || []).reduce((s, o) => s + (o.maxCashback || 0), 0) * 4;
-
-  const grossBenefit = annualCashback + annualPoints + annualLounge + annualMilestone + annualOffer;
-  const netBenefit   = grossBenefit - card.annualFee;
-  const ratio        = card.annualFee === 0 ? null : grossBenefit / card.annualFee;
-
-  return { annualSpend, annualCashback, annualPoints, annualLounge, annualMilestone, annualOffer, grossBenefit, netBenefit, ratio };
-}
-
-// Pre-compute annualised benefits for all cards
-const ANNUAL = Object.fromEntries(CARDS.map((c) => [c.id, calculateAnnualisedBenefit(c)]));
-const bestAnnual  = CARDS.length ? CARDS.reduce((a, b) => ANNUAL[a.id].netBenefit >= ANNUAL[b.id].netBenefit ? a : b) : null;
-const worstAnnual = CARDS.length ? CARDS.reduce((a, b) => ANNUAL[a.id].netBenefit <= ANNUAL[b.id].netBenefit ? a : b) : null;
-const maxNetBenefit = CARDS.length ? Math.max(...CARDS.map((c) => ANNUAL[c.id].netBenefit)) : 1;
+const DEFAULT_PORTFOLIO_DISCLAIMER = "Annualised figures are estimates based on your spend pattern. Actual benefits may differ.";
+const DEFAULT_FINANCIAL_DISCLAIMER = "Earnings are estimates based on published card rates. Verify with your bank.";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatRupee(val, decimals = 0) {
-  return "₹" + val.toLocaleString("en-IN", {
+  const n = Number(val) || 0;
+  return "₹" + n.toLocaleString("en-IN", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
 }
 
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+function scoreAppearance(label) {
+  if (label === "Outstanding") return { bg: "#4ade80", textColor: "#052010" };
+  if (label === "Good")        return { bg: GOLD,      textColor: "#0a1628" };
+  if (label === "Average")     return { bg: "#f97316", textColor: "#fff" };
+  return                            { bg: "#f87171",    textColor: "#fff" }; // Poor / Very Poor
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+function cardInsightText(card) {
+  const earned = Number(card.total_earned) || 0;
+  const missed = Number(card.total_missed) || 0;
+  if (card.is_best)  return "🏆 Your best-performing card so far";
+  if (card.is_worst && missed > earned) return "⚠️ You're missing more than you're earning on this card";
+  if (missed > 0)    return `📈 ${formatRupee(missed)} left on the table — a different card would've earned more`;
+  return "✅ Earning well on this card";
+}
+
+// Simple real-data annualised projection: extrapolates real earned-so-far
+// over the actual number of days covered, rather than a fabricated figure.
+function projectAnnual(totalEarned, daysElapsed) {
+  const days = Math.max(daysElapsed, 7); // guard against wild projections on very new accounts
+  return (Number(totalEarned) || 0) * (365 / days);
+}
+
+// ─── Styles (unchanged from original design) ────────────────────────────────
 
 const s = {
-  container: {
-    background: NAVY,
-    minHeight: "100%",
-    paddingBottom: 90,
-    fontFamily: "'Inter', sans-serif",
-  },
-
-  // Header
+  container: { background: NAVY, minHeight: "100%", paddingBottom: 90, fontFamily: "'Inter', sans-serif" },
   header: {
     background: `linear-gradient(135deg, ${NAVY} 0%, #0a1628 100%)`,
-    padding: "20px 20px 16px",
-    borderBottom: `1px solid ${GOLD_DIM}33`,
+    padding: "20px 20px 16px", borderBottom: `1px solid ${GOLD_DIM}33`,
   },
   headerRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
   headerTitle: { fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" },
@@ -233,7 +62,6 @@ const s = {
   headerBadgeLabel: { fontSize: 9, color: GOLD_DIM, letterSpacing: 1, textTransform: "uppercase" },
   headerBadgeVal:   { fontSize: 15, fontWeight: 800, color: GOLD },
 
-  // Metric strip
   strip: { display: "flex", gap: 8, padding: "14px 16px" },
   metricBox: (color) => ({
     flex: 1, background: NAVY_CARD, borderRadius: 12, padding: "10px",
@@ -243,60 +71,34 @@ const s = {
   metricValue: (color) => ({ fontSize: 15, fontWeight: 800, color, letterSpacing: "-0.3px", lineHeight: 1 }),
   metricSub:   { fontSize: 9, color: "#4a6a9a", marginTop: 1 },
 
-  // Portfolio health box
   healthBox: {
-    margin: "0 16px 4px",
-    background: `${GOLD}0a`,
-    border: `1.5px solid ${GOLD}55`,
-    borderRadius: 14,
-    padding: "14px 16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
+    margin: "0 16px 4px", background: `${GOLD}0a`, border: `1.5px solid ${GOLD}55`,
+    borderRadius: 14, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8,
   },
   healthTop: { display: "flex", alignItems: "center", justifyContent: "space-between" },
   healthLabel: { fontSize: 10, fontWeight: 800, color: GOLD_DIM, letterSpacing: 1.8, textTransform: "uppercase" },
   healthScoreRow: { display: "flex", alignItems: "baseline", gap: 4 },
   healthNumber: { fontSize: 28, fontWeight: 900, color: GOLD, letterSpacing: "-1px", lineHeight: 1 },
   healthDenom:  { fontSize: 14, fontWeight: 600, color: GOLD_DIM },
-  healthBar: {
-    height: 5, background: "#0a1628", borderRadius: 99, overflow: "hidden",
-  },
+  healthBar: { height: 5, background: "#0a1628", borderRadius: 99, overflow: "hidden" },
   healthBarFill: (pct) => ({
-    height: "100%",
-    width: `${pct}%`,
+    height: "100%", width: `${pct}%`,
     background: pct >= 75 ? "#4ade80" : pct >= 50 ? GOLD : "#f97316",
-    borderRadius: 99,
-    transition: "width 0.5s ease",
+    borderRadius: 99, transition: "width 0.5s ease",
   }),
   healthInsight: { fontSize: 12, color: "#8aaac8", lineHeight: 1.5, fontWeight: 400 },
   healthInsightBold: { fontWeight: 700, color: "#b0c8e0" },
+  healthDisclaimer: { fontSize: 9, color: "#4a6a9a", fontStyle: "italic", marginTop: 2 },
 
-  // Section header
-  sectionHeader: {
-    padding: "12px 16px 10px", display: "flex", alignItems: "center", justifyContent: "space-between",
-  },
+  sectionHeader: { padding: "12px 16px 10px", display: "flex", alignItems: "center", justifyContent: "space-between" },
   sectionTitle: { fontSize: 11, fontWeight: 700, color: GOLD, letterSpacing: 2, textTransform: "uppercase" },
   sectionCount: { fontSize: 11, color: "#4a6a9a", fontWeight: 600 },
 
-  // Card tile
   cardList: { padding: "0 16px", display: "flex", flexDirection: "column", gap: 10 },
-  tile: {
-    background: NAVY_CARD, border: `1px solid #1e3a6a`,
-    borderRadius: 16, padding: "14px 14px 12px",
-    position: "relative", overflow: "hidden",
-  },
-  tileAccent: (color) => ({
-    position: "absolute", top: 0, left: 0,
-    width: 4, height: "100%", background: color,
-    borderRadius: "16px 0 0 16px",
-  }),
+  tile: { background: NAVY_CARD, border: `1px solid #1e3a6a`, borderRadius: 16, padding: "14px 14px 12px", position: "relative", overflow: "hidden" },
+  tileAccent: (color) => ({ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: color, borderRadius: "16px 0 0 16px" }),
 
-  // Top row: name block (left) + score circle (right)
-  tileTopRow: {
-    display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-    marginBottom: 8, paddingLeft: 8,
-  },
+  tileTopRow: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, paddingLeft: 8 },
   tileLeft: { display: "flex", flexDirection: "column", gap: 4, flex: 1, paddingRight: 10 },
   tileBank: { fontSize: 9, fontWeight: 700, color: "#4a6a9a", letterSpacing: 1.2, textTransform: "uppercase" },
   tileName: { fontSize: 15, fontWeight: 800, color: "#fff", letterSpacing: "-0.2px" },
@@ -306,88 +108,35 @@ const s = {
     letterSpacing: 0.3, whiteSpace: "nowrap", alignSelf: "flex-start",
   }),
 
-  // Score circle
   scoreCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flexShrink: 0 },
-  scoreCircle: (bg) => ({
-    width: 48, height: 48, borderRadius: "50%",
-    background: bg,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    boxShadow: `0 2px 10px ${bg}66`,
-    flexShrink: 0,
-  }),
-  scoreNumber: (textColor) => ({
-    fontSize: 16, fontWeight: 900, color: textColor, letterSpacing: "-0.5px",
-  }),
-  scoreLabel: (color) => ({
-    fontSize: 9, fontWeight: 700, color, letterSpacing: 0.5,
-    textTransform: "uppercase", textAlign: "center",
-  }),
+  scoreCircle: (bg) => ({ width: 48, height: 48, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 10px ${bg}66`, flexShrink: 0 }),
+  scoreNumber: (textColor) => ({ fontSize: 16, fontWeight: 900, color: textColor, letterSpacing: "-0.5px" }),
+  scoreLabel: (color) => ({ fontSize: 9, fontWeight: 700, color, letterSpacing: 0.5, textTransform: "uppercase", textAlign: "center" }),
 
-  // Insight text
-  insightText: {
-    paddingLeft: 8, marginTop: 0, marginBottom: 10,
-    fontSize: 11, color: "#5a7a9a", fontWeight: 500, lineHeight: 1.4,
-  },
+  insightText: { paddingLeft: 8, marginTop: 0, marginBottom: 10, fontSize: 11, color: "#5a7a9a", fontWeight: 500, lineHeight: 1.4 },
 
-  // Progress bar
-  progressArea:     { paddingLeft: 8, marginBottom: 10 },
-  progressLabelRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
-  progressLabel:    { fontSize: 10, color: "#7a9bcc", fontWeight: 500 },
-  progressPct:      { fontSize: 10, fontWeight: 700, color: "#fff" },
-  progressTrack:    { height: 5, background: "#0a1628", borderRadius: 99, overflow: "hidden" },
-  progressFill: (pct, color) => ({
-    height: "100%",
-    width: `${Math.min(pct, 100)}%`,
-    background: pct >= 100 ? "#4ade80" : pct >= 70 ? GOLD : color,
-    borderRadius: 99,
-    transition: "width 0.4s ease",
-  }),
-  progressSubRow: { display: "flex", justifyContent: "space-between", marginTop: 4 },
-  progressSpend:  { fontSize: 10, color: "#7a9bcc" },
-  progressTarget: { fontSize: 10, color: "#4a6a9a" },
-
-  // Pills row
   infoRow: { display: "flex", gap: 6, paddingLeft: 8, flexWrap: "wrap" },
-  infoPill: (bg, col) => ({
-    background: bg, border: `1px solid ${col}33`, borderRadius: 7,
-    padding: "4px 8px", fontSize: 10, fontWeight: 600, color: col,
-    display: "flex", alignItems: "center", gap: 4, letterSpacing: 0.1,
-  }),
+  infoPill: (bg, col) => ({ background: bg, border: `1px solid ${col}33`, borderRadius: 7, padding: "4px 8px", fontSize: 10, fontWeight: 600, color: col, display: "flex", alignItems: "center", gap: 4, letterSpacing: 0.1 }),
 
-  // Annual benefit tile additions
   annualRow: { paddingLeft: 8, marginTop: 8, display: "flex", flexDirection: "column", gap: 3 },
   annualNet: { fontSize: 11, fontWeight: 700, color: GOLD },
   annualRecovery: { fontSize: 11, fontWeight: 600, color: "#4ade80" },
   annualWarning: { fontSize: 11, fontWeight: 600, color: "#f87171" },
 
-  // Annualised benefit analysis section
-  analysisBox: {
-    margin: "0 16px 4px",
-    background: "#0a1628",
-    border: `1px solid #1e3a6a`,
-    borderRadius: 14,
-    padding: "14px 14px 10px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
+  analysisBox: { margin: "0 16px 4px", background: "#0a1628", border: `1px solid #1e3a6a`, borderRadius: 14, padding: "14px 14px 10px", display: "flex", flexDirection: "column", gap: 10 },
   analysisTitle: { fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: "-0.2px" },
   analysisSub:   { fontSize: 10, color: "#4a6a9a", marginTop: 2, fontWeight: 500 },
-  barRow: {
-    display: "flex", flexDirection: "column", gap: 4,
-  },
+  barRow: { display: "flex", flexDirection: "column", gap: 4 },
   barLabel: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   barCardName: { fontSize: 11, fontWeight: 700, color: "#c8daf0", maxWidth: "55%" },
   barAmount:   { fontSize: 11, fontWeight: 800, color: GOLD },
   barTrack:    { height: 8, background: "#0D1A2E", borderRadius: 99, overflow: "hidden" },
-  barFill: (pct, negative) => ({
-    height: "100%",
-    width: `${Math.max(pct, 2)}%`,
-    background: negative ? "#f87171" : `linear-gradient(90deg, ${GOLD_DIM}, ${GOLD})`,
-    borderRadius: 99,
-    transition: "width 0.5s ease",
-  }),
+  barFill: (pct) => ({ height: "100%", width: `${Math.max(pct, 2)}%`, background: `linear-gradient(90deg, ${GOLD_DIM}, ${GOLD})`, borderRadius: 99, transition: "width 0.5s ease" }),
   barSub: { fontSize: 9, color: "#4a6a9a", fontWeight: 500, marginTop: 1 },
+
+  stateWrap: { padding: "60px 20px", textAlign: "center" },
+  stateText: { color: "#7a9bcc", fontSize: 14, fontWeight: 500 },
+  errorText: { color: "#f87171", fontSize: 13, fontWeight: 600 },
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -402,9 +151,10 @@ function MetricBox({ label, value, sub, color }) {
   );
 }
 
-function PortfolioHealth() {
-  const bestNet  = bestAnnual  ? Math.round(ANNUAL[bestAnnual.id].netBenefit)  : 0;
-  const worstNet = worstAnnual ? Math.round(ANNUAL[worstAnnual.id].netBenefit) : 0;
+function PortfolioHealth({ cards, bestCard, worstCard, disclaimer }) {
+  const avgScore = cards.length
+    ? Math.round(cards.reduce((sum, c) => sum + (Number(c.efficiency_score) || 0), 0) / cards.length)
+    : 0;
 
   return (
     <div style={s.healthBox}>
@@ -420,213 +170,140 @@ function PortfolioHealth() {
         <div style={s.healthBarFill(avgScore)} />
       </div>
 
-      <span style={s.healthInsight}>
-        Your weakest card is{" "}
-        <span style={s.healthInsightBold}>{weakest.name}</span>
-        {" "}at{" "}
-        <span style={s.healthInsightBold}>{weakestScore}/100</span>
-        {weakest.annualFee > 0 ? (
-          <>
-            {" — it costs "}
-            <span style={s.healthInsightBold}>{formatRupee(weakest.annualFee)}</span>
-            {" but delivers only "}
-            <span style={s.healthInsightBold}>{formatRupee(weakestBenefits)}</span>
-            {" in annual value"}
-          </>
-        ) : (
-          " — review your spend pattern to extract more value"
-        )}
-      </span>
-
-      {bestAnnual && (
+      {worstCard && (
         <span style={s.healthInsight}>
-          <span style={{ color: "#4ade80", fontWeight: 700 }}>★ Best annual value: </span>
-          <span style={s.healthInsightBold}>{bestAnnual.name}</span>
+          Your weakest card is{" "}
+          <span style={s.healthInsightBold}>{worstCard.card_name}</span>
+          {" "}at{" "}
+          <span style={s.healthInsightBold}>{worstCard.efficiency_score}/100</span>
+          {worstCard.annual_fee > 0 ? (
+            <>
+              {" — it costs "}
+              <span style={s.healthInsightBold}>{formatRupee(worstCard.annual_fee)}/yr</span>
+              {" but has earned only "}
+              <span style={s.healthInsightBold}>{formatRupee(worstCard.total_earned)}</span>
+              {" so far"}
+            </>
+          ) : (
+            " — review your spend pattern on this card"
+          )}
+        </span>
+      )}
+
+      {bestCard && (
+        <span style={s.healthInsight}>
+          <span style={{ color: "#4ade80", fontWeight: 700 }}>★ Best performer: </span>
+          <span style={s.healthInsightBold}>{bestCard.card_name}</span>
           {" — "}
-          <span style={{ color: "#4ade80", fontWeight: 700 }}>{formatRupee(bestNet)} net benefit/yr</span>
+          <span style={{ color: "#4ade80", fontWeight: 700 }}>{formatRupee(bestCard.total_earned)} earned so far</span>
         </span>
       )}
 
-      {worstAnnual && worstNet < 0 && (
-        <span style={s.healthInsight}>
-          <span style={{ color: "#f87171", fontWeight: 700 }}>⚠ Worst annual value: </span>
-          <span style={s.healthInsightBold}>{worstAnnual.name}</span>
-          {" — costs "}
-          <span style={{ color: "#f87171", fontWeight: 700 }}>{formatRupee(Math.abs(worstNet))} more than it gives</span>
-        </span>
-      )}
+      <span style={s.healthDisclaimer}>{disclaimer || DEFAULT_PORTFOLIO_DISCLAIMER}</span>
     </div>
   );
 }
 
-function AnnualisedBenefitSection() {
-  // Sort cards by net benefit descending for ranking
-  const sorted = [...CARDS].sort((a, b) => ANNUAL[b.id].netBenefit - ANNUAL[a.id].netBenefit);
-  // Scale bar widths: use max of positive net benefits; if all negative use max gross
-  const scaleMax = maxNetBenefit > 0 ? maxNetBenefit : 1;
+function AnnualisedSection({ cards, daysElapsed, disclaimer }) {
+  const projected = cards.map((c) => ({
+    ...c,
+    projectedAnnual: projectAnnual(c.total_earned, daysElapsed),
+  })).sort((a, b) => b.projectedAnnual - a.projectedAnnual);
+
+  const scaleMax = Math.max(1, ...projected.map((c) => c.projectedAnnual));
 
   return (
     <div style={{ padding: "0 0 4px" }}>
       <div style={{ padding: "12px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={s.sectionTitle}>📊 Annualised Benefit Analysis</span>
+        <span style={s.sectionTitle}>📊 Annualised Benefit Estimate</span>
       </div>
 
       <div style={s.analysisBox}>
         <div>
-          <div style={s.analysisTitle}>12-Month Projected Net Benefit</div>
-          <div style={s.analysisSub}>Based on your current spend pattern · Updated monthly</div>
+          <div style={s.analysisTitle}>Projected 12-Month Earning</div>
+          <div style={s.analysisSub}>Based on your real spend so far, projected forward · not a guarantee</div>
         </div>
 
-        {sorted.map((card) => {
-          const ab  = ANNUAL[card.id];
-          const net = Math.round(ab.netBenefit);
-          const gross = Math.round(ab.grossBenefit);
-          const negative = net < 0;
-          const barPct = negative
-            ? (Math.abs(net) / scaleMax) * 100
-            : (net / scaleMax) * 100;
-
+        {projected.map((card) => {
+          const proj = Math.round(card.projectedAnnual);
+          const barPct = (card.projectedAnnual / scaleMax) * 100;
           return (
-            <div key={card.id} style={s.barRow}>
+            <div key={card.card_id} style={s.barRow}>
               <div style={s.barLabel}>
-                <span style={s.barCardName}>{card.name}</span>
-                <span style={{ ...s.barAmount, color: negative ? "#f87171" : GOLD }}>
-                  {negative ? `−${formatRupee(Math.abs(net))}` : formatRupee(net)}
-                </span>
+                <span style={s.barCardName}>{card.card_name}</span>
+                <span style={s.barAmount}>{formatRupee(proj)}</span>
               </div>
               <div style={s.barTrack}>
-                <div style={s.barFill(barPct, negative)} />
+                <div style={s.barFill(barPct)} />
               </div>
               <div style={s.barSub}>
-                {negative
-                  ? <span style={{ color: "#f87171" }}>⚠ Review this card — fee exceeds benefits</span>
-                  : `${formatRupee(gross)} gross − ${formatRupee(card.annualFee)} fee = ${formatRupee(net)} net`
-                }
+                {formatRupee(card.total_earned)} earned in the period so far, projected to a full year
               </div>
             </div>
           );
         })}
+        <span style={{ fontSize: 9, color: "#4a6a9a", fontStyle: "italic" }}>{disclaimer || DEFAULT_PORTFOLIO_DISCLAIMER}</span>
       </div>
     </div>
   );
 }
 
-function CardTile({ card }) {
-  const score    = SCORES[card.id];
-  const appear   = scoreAppearance(score);
-  const insight  = insightText(card, score);
-  const best     = getBestCategory(card);
-  const next     = getNextMilestone(card);
-  const waiver   = card.annualFeeWaiverSpend;
-  const spend    = card.currentSpend;
-  const pct      = waiver > 0 ? (spend / waiver) * 100 : 100;
-  const accentColor   = card.accentColor === "#ffffff" ? GOLD : card.accentColor;
-  const loungeTotal   = (card.loungeAccess?.domestic || 0) + (card.loungeAccess?.international || 0);
-  const loungeLabel   = card.loungeAccess?.perQuarter ? "/qtr" : "/yr";
-  const badgeColor    = accentColor === GOLD ? GOLD : GOLD_LIGHT;
+function CardTile({ card, daysElapsed }) {
+  const appear = scoreAppearance(card.score_label);
+  const insight = cardInsightText(card);
+  const accentColor = card.is_best ? "#4ade80" : card.is_worst ? "#f87171" : GOLD;
+  const projectedAnnual = Math.round(projectAnnual(card.total_earned, daysElapsed));
+  const ratio = card.annual_fee > 0 ? projectedAnnual / card.annual_fee : null;
 
   return (
     <div style={s.tile}>
       <div style={s.tileAccent(accentColor)} />
 
-      {/* Top row: name block (left) + score circle (right) */}
       <div style={s.tileTopRow}>
         <div style={s.tileLeft}>
-          <span style={s.tileBank}>{card.bank} · {card.network}</span>
-          <span style={s.tileName}>{card.name}</span>
-          <div style={s.bestBadge(badgeColor)}>
-            ★ Best: {capitalize(best.key)} ({best.rate}%)
-          </div>
+          <span style={s.tileBank}>{card.bank_name}</span>
+          <span style={s.tileName}>{card.card_name}</span>
+          {card.is_best && (
+            <div style={s.bestBadge("#4ade80")}>★ Portfolio Best</div>
+          )}
+          {card.is_worst && !card.is_best && (
+            <div style={s.bestBadge("#f87171")}>⚠ Needs Review</div>
+          )}
         </div>
 
         <div style={s.scoreCol}>
           <div style={s.scoreCircle(appear.bg)}>
-            <span style={s.scoreNumber(appear.textColor)}>{score}</span>
+            <span style={s.scoreNumber(appear.textColor)}>{card.efficiency_score}</span>
           </div>
-          <span style={s.scoreLabel(appear.bg)}>{appear.label}</span>
+          <span style={s.scoreLabel(appear.bg)}>{card.score_label}</span>
         </div>
       </div>
 
-      {/* Smart insight */}
       <div style={s.insightText}>{insight}</div>
 
-      {/* Spend progress vs fee waiver */}
-      <div style={s.progressArea}>
-        <div style={s.progressLabelRow}>
-          <span style={s.progressLabel}>
-            {waiver > 0 ? "Spend toward fee waiver" : "Annual spend"}
-          </span>
-          <span style={s.progressPct}>
-            {waiver > 0 ? `${Math.min(pct, 100).toFixed(0)}%` : "—"}
-          </span>
-        </div>
-        <div style={s.progressTrack}>
-          <div style={s.progressFill(pct, accentColor)} />
-        </div>
-        <div style={s.progressSubRow}>
-          <span style={s.progressSpend}>{formatRupee(spend)} spent</span>
-          {waiver > 0 && (
-            <span style={s.progressTarget}>
-              {pct >= 100 ? "Fee waived ✓" : `${formatRupee(waiver - spend)} to go`}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Pills row */}
       <div style={s.infoRow}>
-        {next ? (
-          <div style={s.infoPill(`${GOLD}12`, GOLD_LIGHT)}>
-            <span>🎯</span>
-            <span>{formatRupee(next.spendTarget - spend)} more → {next.reward}</span>
-          </div>
-        ) : (
-          <div style={s.infoPill("#4ade8012", "#4ade80")}>
-            <span>✓</span>
-            <span>All milestones unlocked</span>
-          </div>
-        )}
-
-        {loungeTotal > 0 && (
-          <div style={s.infoPill(`${accentColor}12`, accentColor === "#ffffff" ? GOLD : accentColor)}>
-            <span>✈</span>
-            <span>
-              {card.loungeAccess.domestic > 0 && `${card.loungeAccess.domestic} domestic`}
-              {card.loungeAccess.domestic > 0 && card.loungeAccess.international > 0 && " · "}
-              {card.loungeAccess.international > 0 && `${card.loungeAccess.international} intl`}
-              {" "}{loungeLabel}
-            </span>
-          </div>
-        )}
-
         <div style={s.infoPill("#7a9bcc12", "#7a9bcc")}>
           <span>💳</span>
-          <span>{card.annualFee === 0 ? "No annual fee" : `₹${card.annualFee}/yr fee`}</span>
+          <span>{!card.annual_fee ? "No annual fee" : `₹${card.annual_fee}/yr fee`}</span>
         </div>
+        {card.card_last4 && (
+          <div style={s.infoPill(`${GOLD}12`, GOLD_LIGHT)}>
+            <span>•••• {card.card_last4}</span>
+          </div>
+        )}
       </div>
 
-      {/* Annual benefit summary */}
-      {(() => {
-        const ab  = ANNUAL[card.id];
-        const net = Math.round(ab.netBenefit);
-        const negative = net < 0;
-        return (
-          <div style={s.annualRow}>
-            {negative ? (
-              <span style={s.annualWarning}>⚠️ Fee exceeds benefits — consider cancelling</span>
-            ) : (
-              <>
-                <span style={s.annualNet}>Annual net benefit: {formatRupee(net)}</span>
-                <span style={ab.ratio === null ? { fontSize: 11, fontWeight: 600, color: "#4ade80" } : s.annualRecovery}>
-                  {ab.ratio === null
-                    ? "No annual fee — pure benefit"
-                    : `Fee recovery: ${ab.ratio.toFixed(1)}× your annual fee in benefits`}
-                </span>
-              </>
-            )}
-          </div>
-        );
-      })()}
+      <div style={s.annualRow}>
+        <span style={s.annualNet}>Earned so far: {formatRupee(card.total_earned)}</span>
+        {card.total_missed > 0 && (
+          <span style={s.annualWarning}>{formatRupee(card.total_missed)} missed by using this card on suboptimal transactions</span>
+        )}
+        {ratio !== null ? (
+          <span style={s.annualRecovery}>Projected annual: {formatRupee(projectedAnnual)} ({ratio.toFixed(1)}× your annual fee)</span>
+        ) : (
+          <span style={{ fontSize: 11, fontWeight: 600, color: "#4ade80" }}>No annual fee — pure benefit</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -634,47 +311,105 @@ function CardTile({ card }) {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const dashboard = await getInsightsDashboard();
+        if (!cancelled) setData(dashboard);
+      } catch (err) {
+        if (!cancelled) setError(err?.message || "Could not load your dashboard. Please check your connection and try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={s.container}>
+        <div style={s.stateWrap}><span style={s.stateText}>Loading your dashboard…</span></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={s.container}>
+        <div style={s.stateWrap}><span style={s.errorText}>{error}</span></div>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const cards = data.section2_portfolio_health?.cards ?? [];
+  const bestCard = data.section2_portfolio_health?.best_card ?? null;
+  const worstCard = data.section2_portfolio_health?.worst_card ?? null;
+  const financial = data.section1_financial_summary ?? { total_earned: 0, total_missed: 0, net_impact: 0 };
+  const disclaimers = data.disclaimers ?? {};
+
+  const daysElapsed = data.period_start
+    ? Math.max(1, Math.round((Date.now() - new Date(data.period_start).getTime()) / 86400000))
+    : 90; // fallback assumption if the server doesn't return a period start
+
+  if (cards.length === 0) {
+    return (
+      <div style={s.container}>
+        <div style={s.header}>
+          <div style={s.headerTitle}>My Cards</div>
+        </div>
+        <div style={s.stateWrap}>
+          <span style={s.stateText}>No cards added yet. Add a card to see your portfolio here.</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={s.container}>
-
-      {/* Header */}
       <div style={s.header}>
         <div style={s.headerRow}>
           <div>
             <div style={s.headerTitle}>My Cards</div>
-            <div style={s.headerSub}>
-              {CARDS.length} cards · {formatRupee(totalSpend)} portfolio spend
-            </div>
+            <div style={s.headerSub}>{cards.length} cards linked</div>
           </div>
           <div style={s.headerBadge}>
-            <span style={s.headerBadgeLabel}>Total Spend</span>
-            <span style={s.headerBadgeVal}>{formatRupee(totalSpend)}</span>
+            <span style={s.headerBadgeLabel}>Net Impact</span>
+            <span style={s.headerBadgeVal}>{formatRupee(financial.net_impact)}</span>
           </div>
         </div>
       </div>
 
-      {/* Metric strip */}
       <div style={s.strip}>
-        <MetricBox label="Saved/Mo" value={formatRupee(totalSavedMonth, 0)} sub="est. avg cashback" color="#4ade80" />
-        <MetricBox label="Losses"   value={formatRupee(totalLosses, 0)}     sub="suboptimal use"   color="#f87171" />
-        <MetricBox label="Rewards"  value={formatRupee(totalRewardsValue, 0)} sub="points → rupees" color={GOLD} />
+        <MetricBox label="Earned" value={formatRupee(financial.total_earned)} sub={disclaimers.financial_summary ? undefined : "so far"} color="#4ade80" />
+        <MetricBox label="Missed" value={formatRupee(financial.total_missed)} sub="suboptimal use" color="#f87171" />
+        <MetricBox label="Net Impact" value={formatRupee(financial.net_impact)} sub="earned − missed" color={GOLD} />
+      </div>
+      <div style={{ padding: "0 16px 4px", fontSize: 9, color: "#4a6a9a", fontStyle: "italic" }}>
+        {disclaimers.financial_summary || DEFAULT_FINANCIAL_DISCLAIMER}
       </div>
 
-      {/* Portfolio health insight */}
-      <PortfolioHealth />
+      <PortfolioHealth cards={cards} bestCard={bestCard} worstCard={worstCard} disclaimer={disclaimers.portfolio_health} />
 
-      {/* Annualised benefit analysis */}
-      <AnnualisedBenefitSection />
+      <AnnualisedSection cards={cards} daysElapsed={daysElapsed} disclaimer={disclaimers.portfolio_health} />
 
-      {/* Card list */}
       <div style={s.sectionHeader}>
         <span style={s.sectionTitle}>⚡ Card Portfolio</span>
-        <span style={s.sectionCount}>{CARDS.length} cards</span>
+        <span style={s.sectionCount}>{cards.length} cards</span>
       </div>
 
       <div style={s.cardList}>
-        {CARDS.map((card) => (
-          <CardTile key={card.id} card={card} />
+        {cards.map((card) => (
+          <CardTile key={card.card_id} card={card} daysElapsed={daysElapsed} />
         ))}
       </div>
     </div>
