@@ -726,6 +726,7 @@ function PayScreen() {
   const [scoring, setScoring]     = useState(false);
   const [scoreError, setScoreError] = useState("");
   const [disclaimer, setDisclaimer] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("");
 
   // Scanner state machine
   const [scanState, setScanState] = useState<ScanState>("idle");
@@ -761,6 +762,7 @@ function PayScreen() {
       });
       setResults((data.recommendations ?? []) as ScoredCard[]);
       setDisclaimer(data.disclaimer || DEFAULT_DISCLAIMER);
+      setLastUpdated(data.last_updated || "");
     } catch (err: any) {
       setScoreError(err?.message || "Could not get a recommendation. Please check your connection and try again.");
     } finally {
@@ -922,6 +924,11 @@ function PayScreen() {
           {best.value_comparison?.message && (
             <div style={{ marginTop: 10, fontSize: 12, color: "#7a9bcc", lineHeight: 1.5 }}>{best.value_comparison.message}</div>
           )}
+          {best.applied_offer && (
+            <div style={{ marginTop: 6, fontSize: 10, color: "#4a6a9a", fontStyle: "italic" }}>
+              Offers subject to change. Confirm availability with merchant or bank at time of payment.
+            </div>
+          )}
           <button style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={handlePay}>
             Pay with this Card →
           </button>
@@ -947,6 +954,11 @@ function PayScreen() {
         <div style={{ marginTop: 14, fontSize: 11, color: "#4a6a9a", textAlign: "center", lineHeight: 1.5 }}>
           {disclaimer || DEFAULT_DISCLAIMER}
         </div>
+        {lastUpdated && (
+          <div style={{ marginTop: 4, fontSize: 9, color: "#3a5a8a", textAlign: "center" }}>
+            Last updated: {new Date(lastUpdated).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+          </div>
+        )}
       </div>
     );
   };

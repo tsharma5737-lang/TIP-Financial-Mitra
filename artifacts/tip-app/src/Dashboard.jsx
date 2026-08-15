@@ -312,6 +312,7 @@ function CardTile({ card, daysElapsed }) {
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
+  const [fetchedAt, setFetchedAt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -322,7 +323,7 @@ export default function Dashboard() {
       setError("");
       try {
         const dashboard = await getInsightsDashboard();
-        if (!cancelled) setData(dashboard);
+        if (!cancelled) { setData(dashboard); setFetchedAt(new Date()); }
       } catch (err) {
         if (!cancelled) setError(err?.message || "Could not load your dashboard. Please check your connection and try again.");
       } finally {
@@ -381,6 +382,11 @@ export default function Dashboard() {
           <div>
             <div style={s.headerTitle}>My Cards</div>
             <div style={s.headerSub}>{cards.length} cards linked</div>
+            {fetchedAt && (
+              <div style={{ fontSize: 9, color: "#3a5a8a", marginTop: 2 }}>
+                Last updated: {fetchedAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </div>
+            )}
           </div>
           <div style={s.headerBadge}>
             <span style={s.headerBadgeLabel}>Net Impact</span>

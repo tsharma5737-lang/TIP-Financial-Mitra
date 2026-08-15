@@ -102,6 +102,7 @@ function RewardTile({ card, index }) {
 
 export default function Rewards() {
   const [data, setData] = useState(null);
+  const [fetchedAt, setFetchedAt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -112,7 +113,7 @@ export default function Rewards() {
       setError("");
       try {
         const dashboard = await getInsightsDashboard();
-        if (!cancelled) setData(dashboard);
+        if (!cancelled) { setData(dashboard); setFetchedAt(new Date()); }
       } catch (err) {
         if (!cancelled) setError(err?.message || "Could not load your rewards. Please check your connection and try again.");
       } finally {
@@ -154,6 +155,11 @@ export default function Rewards() {
           <div>
             <div style={s.headerTitle}>My Rewards</div>
             <div style={s.headerSub}>{cards.length} cards</div>
+            {fetchedAt && (
+              <div style={{ fontSize: 9, color: "#3a5a8a", marginTop: 2 }}>
+                Last updated: {fetchedAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </div>
+            )}
           </div>
           <div style={s.totalBadge}>
             <span style={s.totalLabel}>Estimated Value</span>
@@ -167,7 +173,7 @@ export default function Rewards() {
         <span style={s.noticeIcon}>💡</span>
         <span style={s.noticeText}>
           Values shown are estimated from your tracked spending using each card's published rates —
-          not a live bank balance. Points value is approximate and redemption rates vary by method
+          not a live bank balance. Points value is approximate. Redemption rates vary by method
           and may change. Once bank-linking is live, we'll show your exact balance and best
           redemption option for each card.
         </span>
