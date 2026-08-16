@@ -530,6 +530,7 @@ function LoginScreen({ onVerified }) {
   const [phase, setPhase] = useState("phone"); // "phone" | "otp"
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const [devOtp, setDevOtp] = useState("");
   const [pressing, setPressing] = useState(false);
   const [shaking, setShaking] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -546,9 +547,15 @@ function LoginScreen({ onVerified }) {
     setErrorMsg("");
     setLoading(true);
     try {
-      await requestOtp(phone);
+      const response = await requestOtp(phone);
       setPhase("otp");
       setOtp("");
+      if (response?.dev_otp) {
+        setDevOtp(response.dev_otp);
+        setOtp(response.dev_otp); // auto-fill for smooth testing - person can still edit if needed
+      } else {
+        setDevOtp("");
+      }
     } catch (err) {
       setErrorMsg(err?.message || "Could not send OTP. Please try again.");
       shake();
@@ -619,6 +626,15 @@ function LoginScreen({ onVerified }) {
               We sent a 6-digit code to<br />
               <strong style={{ color: "#fff" }}>+91 {phone}</strong>
             </p>
+
+            {devOtp && (
+              <div style={{
+                background: "#f97316", color: "#1a0f00", fontSize: 11, fontWeight: 700,
+                borderRadius: 8, padding: "6px 12px", textAlign: "center", marginBottom: 12,
+              }}>
+                TESTING MODE — code auto-filled below ({devOtp})
+              </div>
+            )}
 
             <OtpInputs value={otp} onChange={setOtp} shaking={shaking} />
 
