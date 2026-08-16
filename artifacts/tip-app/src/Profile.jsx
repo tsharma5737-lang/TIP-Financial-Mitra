@@ -75,6 +75,17 @@ const s = {
     cursor: "pointer", letterSpacing: 0.3, fontFamily: "inherit",
   },
 
+  statusCard: { background: NAVY_CARD, border: "1px solid #1e3a6a", borderRadius: 14, overflow: "hidden" },
+  statusRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: "14px 16px", borderBottom: "1px solid #1a2f50",
+  },
+  statusLeft: { display: "flex", flexDirection: "column", gap: 2 },
+  statusLabel: { fontSize: 13, color: "#fff", fontWeight: 600 },
+  statusSub: { fontSize: 11, color: "#4a6a9a", fontWeight: 500 },
+  statusPillActive: { fontSize: 10, fontWeight: 700, color: "#4ade80", background: "#4ade8018", border: "1px solid #4ade8044", borderRadius: 99, padding: "4px 10px", letterSpacing: 0.3 },
+  statusPillSoon: { fontSize: 10, fontWeight: 700, color: GOLD, background: `${GOLD}18`, border: `1px solid ${GOLD}44`, borderRadius: 99, padding: "4px 10px", letterSpacing: 0.3, whiteSpace: "nowrap" },
+
   footerNote: { fontSize: 10, color: "#3a5a8a", textAlign: "center", padding: "18px 24px 0", lineHeight: 1.6 },
 };
 
@@ -154,6 +165,43 @@ export default function Profile({ onLogout }) {
           <div style={{ ...s.infoRow, ...s.infoRowLast }}>
             <span style={s.infoLabel}>Email</span>
             {email ? <span style={s.infoValue}>{email}</span> : <span style={s.infoValueMuted}>Not added yet</span>}
+          </div>
+        </div>
+      </div>
+
+      <div style={s.section}>
+        <div style={s.sectionTitle}>Subscription</div>
+        <div style={s.statusCard}>
+          <div style={s.statusRow}>
+            <div style={s.statusLeft}>
+              <span style={s.statusLabel}>{tier} Plan</span>
+              <span style={s.statusSub}>
+                {user?.subscription_tier === "premium" || user?.subscription_tier === "standard"
+                  ? "Active subscription"
+                  : "Up to 2 cards, all features included"}
+              </span>
+            </div>
+            <span style={s.statusPillSoon}>Upgrade — Coming Soon</span>
+          </div>
+          <div style={{ ...s.statusRow, borderBottom: "none" }}>
+            <div style={s.statusLeft}>
+              <span style={s.statusLabel}>Payments</span>
+              <span style={s.statusSub}>Razorpay</span>
+            </div>
+            <span style={s.statusPillActive}>Active</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={s.section}>
+        <div style={s.sectionTitle}>Bank Linking</div>
+        <div style={s.statusCard}>
+          <div style={{ ...s.statusRow, borderBottom: "none" }}>
+            <div style={s.statusLeft}>
+              <span style={s.statusLabel}>Account Aggregator</span>
+              <span style={s.statusSub}>Auto-import cards, live point balances</span>
+            </div>
+            <span style={s.statusPillSoon}>Coming Soon</span>
           </div>
         </div>
       </div>
