@@ -55,6 +55,7 @@ export const getRecommendation = (params: { merchant_name?: string; vpa?: string
   request("/api/recommend", { method: "POST", body: JSON.stringify(params) });
 
 // ---- Cards (needed for onboarding / manual card add) ----
+export const getAllCards = () => request("/api/cards/all");
 export const getMyCards = () => request("/api/cards/my-cards");
 
 export const addCard = (card_id: string, extra: Record<string, any> = {}) =>

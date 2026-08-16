@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getInsightsDashboard } from "./lib/apiClient";
+import AddCard from "./AddCard.jsx";
 
 const NAVY      = "#0D1A2E";
 const NAVY_CARD = "#112240";
@@ -315,24 +316,34 @@ export default function Dashboard() {
   const [fetchedAt, setFetchedAt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showAddCard, setShowAddCard] = useState(false);
+
+  async function loadDashboard() {
+    setLoading(true);
+    setError("");
+    try {
+      const dashboard = await getInsightsDashboard();
+      setData(dashboard);
+      setFetchedAt(new Date());
+    } catch (err) {
+      setError(err?.message || "Could not load your dashboard. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const dashboard = await getInsightsDashboard();
-        if (!cancelled) { setData(dashboard); setFetchedAt(new Date()); }
-      } catch (err) {
-        if (!cancelled) setError(err?.message || "Could not load your dashboard. Please check your connection and try again.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
+    loadDashboard();
   }, []);
+
+  if (showAddCard) {
+    return (
+      <AddCard
+        onBack={() => { setShowAddCard(false); loadDashboard(); }}
+        onCardAdded={() => {}}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -370,6 +381,16 @@ export default function Dashboard() {
         </div>
         <div style={s.stateWrap}>
           <span style={s.stateText}>No cards added yet. Add a card to see your portfolio here.</span>
+          <button
+            onClick={() => setShowAddCard(true)}
+            style={{
+              marginTop: 18, background: GOLD, color: "#0a1628", border: "none",
+              borderRadius: 12, padding: "12px 24px", fontSize: 14, fontWeight: 800,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            + Add Your First Card
+          </button>
         </div>
       </div>
     );
@@ -410,7 +431,16 @@ export default function Dashboard() {
 
       <div style={s.sectionHeader}>
         <span style={s.sectionTitle}>⚡ Card Portfolio</span>
-        <span style={s.sectionCount}>{cards.length} cards</span>
+        <button
+          onClick={() => setShowAddCard(true)}
+          style={{
+            background: `${GOLD}18`, border: `1px solid ${GOLD}44`, borderRadius: 8,
+            padding: "4px 10px", fontSize: 11, fontWeight: 700, color: GOLD,
+            cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          + Add Card
+        </button>
       </div>
 
       <div style={s.cardList}>
