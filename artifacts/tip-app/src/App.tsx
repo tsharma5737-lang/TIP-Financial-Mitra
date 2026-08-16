@@ -337,6 +337,9 @@ const s = {
 function formatRupee(val: number) {
   return `₹${Math.round(val).toLocaleString("en-IN")}`;
 }
+function formatRupeeEst(val: number) {
+  return `~₹${Math.round(val).toLocaleString("en-IN")}`;
+}
 
 // ─── Bottom Nav ───────────────────────────────────────────────────────────────
 
@@ -648,21 +651,40 @@ function QRScannerView({
     scannerRef.current = qrCode;
     let cancelled = false;
 
-    qrCode
-      .start(
-        { facingMode: "environment" }, // always the back camera, no picker shown
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText: string) => {
-          if (cancelled) return;
-          cancelled = true;
-          qrCode.stop().catch(() => {});
-          onScanned(decodedText);
-        },
-        () => {}, // per-frame errors are normal — ignore
-      )
-      .catch(() => {
+    async function startScanning() {
+      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+      const onSuccess = (decodedText: string) => {
+        if (cancelled) return;
+        cancelled = true;
+        qrCode.stop().catch(() => {});
+        onScanned(decodedText);
+      };
+      const onFrameError = () => {}; // per-frame errors are normal — ignore
+
+      try {
+        // Explicitly enumerate cameras and pick one deterministically, rather
+        // than leaving camera choice to the browser — some phones with 3+ rear
+        // lenses (e.g. Galaxy S24 Ultra) present a picker if we just pass a
+        // generic {facingMode: "environment"} constraint.
+        const cameras = await Html5Qrcode.getCameras();
+        if (cancelled) return;
+
+        if (cameras && cameras.length > 0) {
+          const backCamera = cameras.find(
+            (c) => /back|rear|environment/i.test(c.label) && !/front|user|selfie/i.test(c.label)
+          );
+          const chosenId = (backCamera ?? cameras[cameras.length - 1]).id;
+          await qrCode.start(chosenId, config, onSuccess, onFrameError);
+        } else {
+          // Fallback if enumeration returns nothing usable
+          await qrCode.start({ facingMode: "environment" }, config, onSuccess, onFrameError);
+        }
+      } catch {
         if (!cancelled) setScanError("Could not access the camera. Please check camera permissions and try again.");
-      });
+      }
+    }
+
+    startScanning();
 
     return () => {
       cancelled = true;
@@ -726,6 +748,8 @@ type ScanState = "idle" | "camera" | "confirm" | "manual";
 function PayScreen() {
   // Shared result state
   const [results, setResults]     = useState<ScoredCard[] | null>(null);
+  const [notApplicable, setNotApplicable] = useState<any[]>([]);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
   const [pressing, setPressing]   = useState(false);
   const [scoring, setScoring]     = useState(false);
@@ -770,6 +794,8 @@ function PayScreen() {
         amount: amt,
       });
       setResults((data.recommendations ?? []) as ScoredCard[]);
+      setNotApplicable(data.cards_not_applicable ?? []);
+      setShowBreakdown(false);
       setDisclaimer(data.disclaimer || DEFAULT_DISCLAIMER);
       setLastUpdated(data.last_updated || "");
     } catch (err: any) {
@@ -914,19 +940,33 @@ function PayScreen() {
             <span style={{ ...s.savingsLabel, display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span> You save
             </span>
-            <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>{formatRupee(best.rupee_value)}</span>
+            <span style={{ ...s.savingsAmount, fontSize: "2rem" }}>{formatRupeeEst(best.rupee_value)}</span>
           </div>
-          <div style={s.breakdownBox}>
-            <div style={s.breakdownRow}><span style={s.breakdownKey}>Base Reward</span><span style={s.breakdownVal}>{formatRupee(best.base_rupee_value)}</span></div>
-            {best.applied_offer && (
-              <>
-                <div style={s.breakdownDivider} />
-                <div style={s.breakdownRow}><span style={s.breakdownKey}>Active Offer</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupee(best.applied_offer.offer_value)}</span></div>
-              </>
-            )}
-            <div style={s.breakdownDivider} />
-            <div style={s.breakdownRow}><span style={{ ...s.breakdownKey, fontWeight: 700, color: "#fff" }}>Total Value</span><span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupee(best.rupee_value)}</span></div>
-          </div>
+
+          <button
+            onClick={() => setShowBreakdown((v) => !v)}
+            style={{
+              background: "transparent", border: "none", color: "#7a9bcc", fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit", padding: "4px 0", display: "flex",
+              alignItems: "center", gap: 4, letterSpacing: 0.3,
+            }}
+          >
+            How is this calculated? {showBreakdown ? "▲" : "▼"}
+          </button>
+
+          {showBreakdown && (
+            <div style={s.breakdownBox}>
+              <div style={s.breakdownRow}><span style={s.breakdownKey}>Base Reward</span><span style={s.breakdownVal}>{formatRupeeEst(best.base_rupee_value)}</span></div>
+              {best.applied_offer && (
+                <>
+                  <div style={s.breakdownDivider} />
+                  <div style={s.breakdownRow}><span style={s.breakdownKey}>Active Offer</span><span style={{ ...s.breakdownVal, color: GOLD }}>+{formatRupeeEst(best.applied_offer.offer_value)}</span></div>
+                </>
+              )}
+              <div style={s.breakdownDivider} />
+              <div style={s.breakdownRow}><span style={{ ...s.breakdownKey, fontWeight: 700, color: "#fff" }}>Total Value</span><span style={{ ...s.breakdownVal, color: "#4ade80", fontSize: 14 }}>{formatRupeeEst(best.rupee_value)}</span></div>
+            </div>
+          )}
           {best.value_comparison?.message && (
             <div style={{ marginTop: 10, fontSize: 12, color: "#7a9bcc", lineHeight: 1.5 }}>{best.value_comparison.message}</div>
           )}
@@ -953,6 +993,31 @@ function PayScreen() {
                   <span style={s.otherCardTotal}>{formatRupee(r.rupee_value)}</span>
                   <span style={s.otherCardTotalLabel}>total value</span>
                 </div>
+              </div>
+            ))}
+          </>
+        )}
+        {notApplicable.length > 0 && (
+          <>
+            <div style={{ ...s.otherCardsLabel, color: "#4a6a9a", marginTop: 14 }}>
+              These cards can't be used for this payment
+            </div>
+            {notApplicable.map((c: any, i: number) => (
+              <div
+                key={c.card_id ?? i}
+                style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "10px 12px", background: "#0a1628", border: "1px solid #1a2f50",
+                  borderRadius: 10, marginBottom: 6, opacity: 0.65,
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 10, color: "#4a6a9a", fontWeight: 600 }}>{c.bank_name}</span>
+                  <span style={{ fontSize: 12, color: "#7a9bcc", fontWeight: 600 }}>{c.card_name}</span>
+                </div>
+                <span style={{ fontSize: 10, color: "#4a6a9a", fontStyle: "italic", maxWidth: "45%", textAlign: "right" }}>
+                  {c.reason || "Not usable for this payment method"}
+                </span>
               </div>
             ))}
           </>
