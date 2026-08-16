@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Html5QrcodeScanner, Html5QrcodeScanType } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 // @ts-ignore
 import Dashboard from "./Dashboard.jsx";
 // @ts-ignore
@@ -640,32 +640,34 @@ function QRScannerView({
   onScanned: (text: string) => void;
   onClose: () => void;
 }) {
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const [scanError, setScanError] = useState("");
 
   useEffect(() => {
-    const scanner = new Html5QrcodeScanner(
-      "tip-qr-reader",
-      {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-        rememberLastUsedCamera: true,
-        showTorchButtonIfSupported: true,
-      },
-      /* verbose= */ false,
-    );
+    const qrCode = new Html5Qrcode("tip-qr-reader", /* verbose= */ false);
+    scannerRef.current = qrCode;
+    let cancelled = false;
 
-    scanner.render(
-      (decodedText: string) => {
-        scanner.clear().catch(() => {});
-        onScanned(decodedText);
-      },
-      () => {}, // per-frame errors are normal — ignore
-    );
+    qrCode
+      .start(
+        { facingMode: "environment" }, // always the back camera, no picker shown
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText: string) => {
+          if (cancelled) return;
+          cancelled = true;
+          qrCode.stop().catch(() => {});
+          onScanned(decodedText);
+        },
+        () => {}, // per-frame errors are normal — ignore
+      )
+      .catch(() => {
+        if (!cancelled) setScanError("Could not access the camera. Please check camera permissions and try again.");
+      });
 
-    scannerRef.current = scanner;
-
-    return () => { scannerRef.current?.clear().catch(() => {}); };
+    return () => {
+      cancelled = true;
+      qrCode.stop().catch(() => {});
+    };
   }, []);
 
   return (
@@ -676,6 +678,9 @@ function QRScannerView({
       <div style={{ borderRadius: 14, overflow: "hidden", border: `2px solid ${GOLD}44` }}>
         <div id="tip-qr-reader" style={{ width: "100%" }} />
       </div>
+      {scanError && (
+        <div style={{ color: "#f87171", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{scanError}</div>
+      )}
       <button
         onClick={onClose}
         style={{ background: "transparent", border: `1px solid #1e3a6a`, borderRadius: 10, color: "#7a9bcc", fontSize: 13, fontWeight: 600, padding: "10px", cursor: "pointer", fontFamily: "inherit" }}
@@ -840,9 +845,6 @@ function PayScreen() {
       <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
         <span style={s.headerTitle}>TIP</span>
         <span style={s.headerSub}>Your Financial Mitra</span>
-      </div>
-      <div style={{ background: "#1e2d40", borderRadius: 8, padding: "4px 8px", border: "1px solid #2a3f58", alignSelf: "flex-start" as const, marginTop: 2 }}>
-        <span style={{ fontSize: 9, fontWeight: 600, color: "#7a9bcc", letterSpacing: 0.5 }}>DEMO MODE</span>
       </div>
     </div>
   );
