@@ -973,9 +973,26 @@ function PayScreen() {
             <div style={{ marginTop: 10, fontSize: 12, color: "#7a9bcc", lineHeight: 1.5 }}>{best.value_comparison.message}</div>
           )}
           {best.applied_offer && (
-            <div style={{ marginTop: 6, fontSize: 10, color: "#4a6a9a", fontStyle: "italic" }}>
-              Offers subject to change. Confirm availability with merchant or bank at time of payment.
-            </div>
+            <>
+              <a
+                href="https://offers.smartbuy.hdfc.bank.in/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  background: `linear-gradient(135deg, ${GOLD_DIM}, ${GOLD})`, color: "#0a1628",
+                  borderRadius: 12, padding: "12px", fontSize: 13, fontWeight: 800,
+                  textDecoration: "none", boxShadow: `0 4px 16px ${GOLD}33`,
+                }}
+              >
+                {best.value_comparison?.extra_from_offer
+                  ? `Activate on SmartBuy — Earn ${formatRupeeEst(best.value_comparison.extra_from_offer)} More →`
+                  : "Activate on HDFC SmartBuy →"}
+              </a>
+              <div style={{ marginTop: 6, fontSize: 10, color: "#4a6a9a", fontStyle: "italic" }}>
+                Offers subject to change. Confirm availability with merchant or bank at time of payment.
+              </div>
+            </>
           )}
           <button style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={handlePay}>
             Pay with this Card →
