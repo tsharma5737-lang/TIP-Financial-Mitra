@@ -6,7 +6,9 @@ import Dashboard from "./Dashboard.jsx";
 import Rewards from "./Rewards.jsx";
 // @ts-ignore
 import Onboarding from "./Onboarding.jsx";
-import { getToken, getRecommendation } from "./lib/apiClient";
+import { getToken, getRecommendation, getMyCards } from "./lib/apiClient";
+// @ts-ignore
+import AddCard from "./AddCard.jsx";
 // @ts-ignore
 import Profile from "./Profile.jsx";
 
@@ -1360,6 +1362,31 @@ export default function App() {
     () => typeof window !== "undefined" && !!getToken()
   );
   const [activeTab, setActiveTab] = useState<Tab>("pay");
+  const [cardCheckDone, setCardCheckDone] = useState(false);
+  const [needsCardSetup, setNeedsCardSetup] = useState(false);
+
+  useEffect(() => {
+    if (!onboarded) {
+      setCardCheckDone(false);
+      return;
+    }
+    let cancelled = false;
+    async function checkCards() {
+      try {
+        const mine = await getMyCards();
+        const mineArr = Array.isArray(mine) ? mine : (mine?.cards ?? []);
+        if (!cancelled) setNeedsCardSetup(mineArr.length === 0);
+      } catch {
+        // If the check itself fails, don't block the person from the app -
+        // just skip the gate and let the normal empty-state handle it.
+        if (!cancelled) setNeedsCardSetup(false);
+      } finally {
+        if (!cancelled) setCardCheckDone(true);
+      }
+    }
+    checkCards();
+    return () => { cancelled = true; };
+  }, [onboarded]);
 
   function completeOnboarding() {
     localStorage.setItem("tip_onboarded", "1");
@@ -1374,6 +1401,23 @@ export default function App() {
 
   if (!onboarded) {
     return <Onboarding onComplete={completeOnboarding} />;
+  }
+
+  if (onboarded && !cardCheckDone) {
+    return (
+      <div style={{ background: "#0D1A2E", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#7a9bcc", fontSize: 14, fontWeight: 500 }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (needsCardSetup) {
+    return (
+      <AddCard
+        isOnboarding
+        onContinue={() => setNeedsCardSetup(false)}
+      />
+    );
   }
 
   function renderScreen() {

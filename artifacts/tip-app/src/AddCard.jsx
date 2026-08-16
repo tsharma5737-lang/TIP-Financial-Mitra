@@ -56,7 +56,7 @@ function formatFee(fee) {
   return `₹${fee.toLocaleString("en-IN")}/yr`;
 }
 
-export default function AddCard({ onBack, onCardAdded }) {
+export default function AddCard({ onBack, onCardAdded, isOnboarding, onContinue }) {
   const [allCards, setAllCards] = useState([]);
   const [myCardIds, setMyCardIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
@@ -116,10 +116,14 @@ export default function AddCard({ onBack, onCardAdded }) {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.backBtn} onClick={onBack}>←</button>
+        {!isOnboarding && <button style={s.backBtn} onClick={onBack}>←</button>}
         <div>
-          <div style={s.headerTitle}>Add a Card</div>
-          <div style={s.headerSub}>{allCards.length} cards available</div>
+          <div style={s.headerTitle}>{isOnboarding ? "Add Your Cards" : "Add a Card"}</div>
+          <div style={s.headerSub}>
+            {isOnboarding
+              ? "Add at least one card to get started with TIP"
+              : `${allCards.length} cards available`}
+          </div>
         </div>
       </div>
 
@@ -167,6 +171,24 @@ export default function AddCard({ onBack, onCardAdded }) {
           );
         })}
       </div>
+
+      {isOnboarding && (
+        <div style={{ padding: "20px 16px 0" }}>
+          <button
+            onClick={onContinue}
+            disabled={myCardIds.size === 0}
+            style={{
+              width: "100%", background: myCardIds.size === 0 ? "#1a2f50" : GOLD,
+              color: myCardIds.size === 0 ? "#4a6a9a" : "#0a1628",
+              border: "none", borderRadius: 12, padding: "14px",
+              fontSize: 14, fontWeight: 800, cursor: myCardIds.size === 0 ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {myCardIds.size === 0 ? "Add at least one card to continue" : `Continue with ${myCardIds.size} card${myCardIds.size > 1 ? "s" : ""} →`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
