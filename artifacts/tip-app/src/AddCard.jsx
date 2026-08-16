@@ -64,6 +64,9 @@ export default function AddCard({ onBack, onCardAdded, isOnboarding, onContinue 
   const [search, setSearch] = useState("");
   const [addingId, setAddingId] = useState(null);
   const [justAddedIds, setJustAddedIds] = useState(new Set());
+  const [expandedCardId, setExpandedCardId] = useState(null);
+  const [last4Value, setLast4Value] = useState("");
+  const [last4Error, setLast4Error] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -94,13 +97,26 @@ export default function AddCard({ onBack, onCardAdded, isOnboarding, onContinue 
     );
   }, [allCards, search]);
 
-  async function handleAdd(card) {
+  function openLast4Entry(card) {
+    setExpandedCardId(card.id);
+    setLast4Value("");
+    setLast4Error("");
+  }
+
+  async function confirmAdd(card) {
+    const digits = last4Value.replace(/\D/g, "");
+    if (digits.length !== 4) {
+      setLast4Error("Enter exactly 4 digits, found on the front or back of your card.");
+      return;
+    }
     if (addingId) return;
     setAddingId(card.id);
+    setLast4Error("");
     try {
-      await addCard(card.id);
+      await addCard(card.id, { card_last4: digits });
       setMyCardIds((prev) => new Set(prev).add(card.id));
       setJustAddedIds((prev) => new Set(prev).add(card.id));
+      setExpandedCardId(null);
       onCardAdded?.();
     } catch (err) {
       setError(err?.message || "Could not add this card. Please try again.");
@@ -150,22 +166,62 @@ export default function AddCard({ onBack, onCardAdded, isOnboarding, onContinue 
           const isOwned = myCardIds.has(card.id);
           const isAdding = addingId === card.id;
           const justAdded = justAddedIds.has(card.id);
+          const isExpanded = expandedCardId === card.id;
           return (
-            <div key={card.id} style={s.cardRow}>
-              <div style={s.cardLeft}>
-                <span style={s.cardBank}>{card.bank_name}</span>
-                <span style={s.cardName}>{card.card_name}</span>
-                <span style={s.cardMeta}>
-                  {card.network ? `${card.network} · ` : ""}{formatFee(card.annual_fee)}
-                  {card.upi_linked === false ? " · Not UPI-linked" : ""}
-                </span>
+            <div key={card.id} style={{ ...s.cardRow, flexDirection: "column", alignItems: "stretch", gap: isExpanded ? 10 : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div style={s.cardLeft}>
+                  <span style={s.cardBank}>{card.bank_name}</span>
+                  <span style={s.cardName}>{card.card_name}</span>
+                  <span style={s.cardMeta}>
+                    {card.network ? `${card.network} · ` : ""}{formatFee(card.annual_fee)}
+                    {card.upi_linked === false ? " · Not UPI-linked" : ""}
+                  </span>
+                </div>
+                {isOwned ? (
+                  <span style={s.addedPill}>{justAdded ? "✓ Added" : "✓ Owned"}</span>
+                ) : isAdding ? (
+                  <span style={s.addingPill}>Adding…</span>
+                ) : isExpanded ? (
+                  <button
+                    style={{ background: "transparent", border: "1px solid #1e3a6a", borderRadius: 9, padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#7a9bcc", cursor: "pointer", fontFamily: "inherit" }}
+                    onClick={() => setExpandedCardId(null)}
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <button style={s.addBtn} onClick={() => openLast4Entry(card)}>+ Add</button>
+                )}
               </div>
-              {isOwned ? (
-                <span style={s.addedPill}>{justAdded ? "✓ Added" : "✓ Owned"}</span>
-              ) : isAdding ? (
-                <span style={s.addingPill}>Adding…</span>
-              ) : (
-                <button style={s.addBtn} onClick={() => handleAdd(card)}>+ Add</button>
+
+              {isExpanded && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      autoFocus
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="Last 4 digits"
+                      value={last4Value}
+                      onChange={(e) => setLast4Value(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      style={{
+                        flex: 1, background: "#0a1628", border: "1px solid #1e3a6a", borderRadius: 9,
+                        padding: "9px 12px", color: "#fff", fontSize: 14, fontFamily: "inherit", letterSpacing: 2,
+                        boxSizing: "border-box",
+                      }}
+                    />
+                    <button
+                      style={{ ...s.addBtn, opacity: last4Value.length === 4 ? 1 : 0.5 }}
+                      onClick={() => confirmAdd(card)}
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                  <span style={{ fontSize: 10, color: "#4a6a9a" }}>
+                    Found printed on the front or back of your card — required so TIP can later match it to your bank messages.
+                  </span>
+                  {last4Error && <span style={{ fontSize: 10, color: "#f87171", fontWeight: 600 }}>{last4Error}</span>}
+                </div>
               )}
             </div>
           );
@@ -173,7 +229,7 @@ export default function AddCard({ onBack, onCardAdded, isOnboarding, onContinue 
       </div>
 
       {isOnboarding && (
-        <div style={{ padding: "20px 16px 0" }}>
+        <div style={{ padding: "20px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
           <button
             onClick={onContinue}
             disabled={myCardIds.size === 0}
@@ -186,6 +242,16 @@ export default function AddCard({ onBack, onCardAdded, isOnboarding, onContinue 
             }}
           >
             {myCardIds.size === 0 ? "Add at least one card to continue" : `Continue with ${myCardIds.size} card${myCardIds.size > 1 ? "s" : ""} →`}
+          </button>
+          <button
+            onClick={onContinue}
+            style={{
+              width: "100%", background: "transparent", border: "none",
+              color: "#7a9bcc", fontSize: 12, fontWeight: 600, cursor: "pointer",
+              fontFamily: "inherit", textDecoration: "underline", padding: "4px",
+            }}
+          >
+            Skip for now
           </button>
         </div>
       )}
