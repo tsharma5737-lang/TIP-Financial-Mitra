@@ -6,7 +6,7 @@ import Dashboard from "./Dashboard.jsx";
 import Rewards from "./Rewards.jsx";
 // @ts-ignore
 import Onboarding from "./Onboarding.jsx";
-import { getToken, getRecommendation, getMyCards } from "./lib/apiClient";
+import { getToken, getRecommendation, getMyCards, confirmTransaction } from "./lib/apiClient";
 // @ts-ignore
 import AddCard from "./AddCard.jsx";
 // @ts-ignore
@@ -753,6 +753,8 @@ function PayScreen() {
   const [notApplicable, setNotApplicable] = useState<any[]>([]);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
   const [pressing, setPressing]   = useState(false);
   const [scoring, setScoring]     = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -842,19 +844,37 @@ function PayScreen() {
     runScore(parsed, merchant.trim());
   }
 
-  function handlePay() {
+  async function handlePay(cardUsed?: ScoredCard) {
     const bestCard = results?.[0];
-    if (!bestCard) return;
-    setPaySuccess({
-      merchant: merchant || scannedName || scannedVpa.split("@")[0],
-      amount: parseFloat(amount || confirmAmount),
-      cardName: bestCard.card_name,
-      saved: bestCard.rupee_value,
-    });
+    const chosen = cardUsed ?? bestCard;
+    if (!chosen) return;
+    setConfirming(true);
+    setConfirmError("");
+    try {
+      await confirmTransaction({
+        card_id: chosen.card_id,
+        merchant_name: merchant || scannedName || scannedVpa.split("@")[0],
+        amount: parseFloat(amount || confirmAmount),
+        recommended_card_id: bestCard?.card_id,
+        actual_earning: chosen.rupee_value,
+        potential_saving: bestCard ? Math.max(0, bestCard.rupee_value - chosen.rupee_value) : 0,
+      });
+      setPaySuccess({
+        merchant: merchant || scannedName || scannedVpa.split("@")[0],
+        amount: parseFloat(amount || confirmAmount),
+        cardName: chosen.card_name,
+        saved: chosen.rupee_value,
+      });
+    } catch (err: any) {
+      setConfirmError(err?.message || "Could not save this transaction. Please try again.");
+    } finally {
+      setConfirming(false);
+    }
   }
 
   function handleDone() {
     setPaySuccess(null);
+    setConfirmError("");
     setResults(null);
     setAmount(""); setMerchant(""); setCategory("dining");
     setConfirmAmount(""); setScannedVpa(""); setScannedName("");
@@ -994,9 +1014,16 @@ function PayScreen() {
               </div>
             </>
           )}
-          <button style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={handlePay}>
-            Pay with this Card →
+          <button
+            style={{ ...s.btn, marginTop: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: confirming ? 0.7 : 1 }}
+            onClick={() => handlePay()}
+            disabled={confirming}
+          >
+            {confirming ? "Saving…" : "Pay with this Card →"}
           </button>
+          {confirmError && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#f87171", fontWeight: 600, textAlign: "center" }}>{confirmError}</div>
+          )}
         </div>
         {rest.length > 0 && (
           <>
@@ -1007,6 +1034,12 @@ function PayScreen() {
                   <span style={s.otherCardRank}>#{r.rank} · {r.bank_name}</span>
                   <span style={s.otherCardName}>{r.card_name}</span>
                   {r.rupee_loss_vs_best > 0 && <span style={s.otherCardLoss}>{formatRupee(r.rupee_loss_vs_best)} less than best</span>}
+                  <span
+                    onClick={() => !confirming && handlePay(r)}
+                    style={{ fontSize: 10, color: "#7a9bcc", textDecoration: "underline", cursor: confirming ? "default" : "pointer", marginTop: 2 }}
+                  >
+                    I used this card instead
+                  </span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                   <span style={s.otherCardTotal}>{formatRupee(r.rupee_value)}</span>

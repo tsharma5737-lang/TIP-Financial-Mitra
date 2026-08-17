@@ -64,6 +64,12 @@ export const addCard = (card_id: string, extra: Record<string, any> = {}) =>
 export const removeCard = (cardId: string) =>
   request(`/api/cards/remove/${cardId}`, { method: "DELETE" });
 
+// ---- Confirm a payment (manual entry, since browsers can't read SMS) ----
+export const confirmTransaction = (params: {
+  card_id: string; merchant_name: string; amount: number;
+  recommended_card_id?: string; actual_earning?: number; potential_saving?: number;
+}) => request("/api/transactions/confirm", { method: "POST", body: JSON.stringify(params) });
+
 // ---- Dashboard / Rewards (for later tasks) ----
 export const getInsightsDashboard = (period?: string) =>
   request(`/api/insights/dashboard${period ? `?period=${period}` : ""}`);
