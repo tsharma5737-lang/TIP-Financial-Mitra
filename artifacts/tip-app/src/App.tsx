@@ -776,7 +776,7 @@ function PayScreen() {
   const [scannedIsPersonal, setScannedIsPersonal] = useState(false);
   const [scannedBank, setScannedBank]         = useState("");
   const [detectedCat, setDetectedCat]         = useState<string | null>(null);
-  const [selectedHuman, setSelectedHuman] = useState(HUMAN_CATEGORIES[0]);
+  const [selectedHuman, setSelectedHuman] = useState("");
   const [confirmAmount, setConfirmAmount] = useState("");
 
   // Manual-entry state
@@ -824,7 +824,7 @@ function PayScreen() {
     setScannedIsPersonal(parsed.isPersonal ?? false);
     setScannedBank(parsed.bank ?? "");
     setDetectedCat(cat);
-    setSelectedHuman(cat ?? HUMAN_CATEGORIES[0]);
+    setSelectedHuman(cat ?? "");
     setConfirmAmount(parsed.amount);
     setResults(null);
     setScanState("confirm");
@@ -1366,6 +1366,7 @@ function PayScreen() {
                   </div>
                 ) : (
                   <select value={selectedHuman} onChange={(e) => setSelectedHuman(e.target.value)} style={s.select}>
+                    <option value="" disabled>Select category…</option>
                     {HUMAN_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 )}
