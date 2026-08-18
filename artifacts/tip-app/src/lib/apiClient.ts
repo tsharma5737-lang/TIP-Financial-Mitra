@@ -70,6 +70,8 @@ export const confirmTransaction = (params: {
   recommended_card_id?: string; actual_earning?: number; potential_saving?: number;
 }) => request("/api/transactions/confirm", { method: "POST", body: JSON.stringify(params) });
 
+export const getTransactions = (page: number = 1) => request(`/api/transactions?page=${page}`);
+
 // ---- Dashboard / Rewards (for later tasks) ----
 export const getInsightsDashboard = (period?: string) =>
   request(`/api/insights/dashboard${period ? `?period=${period}` : ""}`);

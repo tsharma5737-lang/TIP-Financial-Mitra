@@ -755,6 +755,7 @@ function PayScreen() {
   const [paySuccess, setPaySuccess] = useState<PaySuccess | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState("");
+  const [pendingOfferConfirm, setPendingOfferConfirm] = useState<ScoredCard | null>(null);
   const [pressing, setPressing]   = useState(false);
   const [scoring, setScoring]     = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -848,22 +849,39 @@ function PayScreen() {
     const bestCard = results?.[0];
     const chosen = cardUsed ?? bestCard;
     if (!chosen) return;
+
+    // If this card's value includes a bank offer requiring separate activation
+    // (e.g. HDFC SmartBuy), the app has no way to know whether the person
+    // actually did that - ask a quick yes/no right now, rather than assume.
+    if (chosen.applied_offer) {
+      setPendingOfferConfirm(chosen);
+      return;
+    }
+
+    await savePayment(chosen, bestCard, true);
+  }
+
+  async function savePayment(chosen: ScoredCard, bestCard: ScoredCard | undefined, offerActivated: boolean) {
     setConfirming(true);
     setConfirmError("");
+    setPendingOfferConfirm(null);
     try {
+      const earningForThisCard = offerActivated
+        ? chosen.rupee_value
+        : (chosen.base_rupee_value ?? chosen.rupee_value);
       await confirmTransaction({
         card_id: chosen.card_id,
         merchant_name: merchant || scannedName || scannedVpa.split("@")[0],
         amount: parseFloat(amount || confirmAmount),
         recommended_card_id: bestCard?.card_id,
-        actual_earning: chosen.rupee_value,
-        potential_saving: bestCard ? Math.max(0, bestCard.rupee_value - chosen.rupee_value) : 0,
+        actual_earning: earningForThisCard,
+        potential_saving: bestCard ? Math.max(0, bestCard.rupee_value - earningForThisCard) : 0,
       });
       setPaySuccess({
         merchant: merchant || scannedName || scannedVpa.split("@")[0],
         amount: parseFloat(amount || confirmAmount),
         cardName: chosen.card_name,
-        saved: chosen.rupee_value,
+        saved: earningForThisCard,
       });
     } catch (err: any) {
       setConfirmError(err?.message || "Could not save this transaction. Please try again.");
@@ -896,6 +914,43 @@ function PayScreen() {
       </div>
     </div>
   );
+
+  // ── Offer activation confirmation ──────────────────────────────────────────
+  if (pendingOfferConfirm) {
+    const card = pendingOfferConfirm;
+    const offerAmount = card.applied_offer?.offer_value ?? 0;
+    return (
+      <div style={s.app}>
+        <Header />
+        <div style={{ padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: NAVY_CARD, border: `1px solid ${GOLD}44`, borderRadius: 16, padding: "20px" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginBottom: 8 }}>One quick check</div>
+            <p style={{ fontSize: 13, color: "#b0c8e8", lineHeight: 1.6, margin: 0 }}>
+              This card's value includes <strong style={{ color: GOLD }}>{formatRupee(offerAmount)}</strong> from
+              an offer that needed activating separately (e.g. HDFC SmartBuy) before you paid.
+            </p>
+            <p style={{ fontSize: 13, color: "#fff", fontWeight: 700, marginTop: 12, marginBottom: 0 }}>
+              Did you activate it before paying?
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              style={{ flex: 1, background: "#1a2f50", color: "#7a9bcc", border: "1px solid #2a4a7a", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+              onClick={() => savePayment(card, results?.[0], false)}
+            >
+              No
+            </button>
+            <button
+              style={{ flex: 1, background: GOLD, color: "#0a1628", border: "none", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+              onClick={() => savePayment(card, results?.[0], true)}
+            >
+              Yes, I activated it
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Payment success ────────────────────────────────────────────────────────
   if (paySuccess) {

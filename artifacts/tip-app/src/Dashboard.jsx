@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getInsightsDashboard } from "./lib/apiClient";
+import { getInsightsDashboard, getTransactions } from "./lib/apiClient";
 import AddCard from "./AddCard.jsx";
 
 const NAVY      = "#0D1A2E";
@@ -142,12 +142,94 @@ const s = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function MetricBox({ label, value, sub, color }) {
+function MetricBox({ label, value, sub, color, onClick }) {
   return (
-    <div style={s.metricBox(color)}>
+    <div style={{ ...s.metricBox(color), cursor: onClick ? "pointer" : "default" }} onClick={onClick}>
       <span style={s.metricLabel}>{label}</span>
       <span style={s.metricValue(color)}>{value}</span>
       {sub && <span style={s.metricSub}>{sub}</span>}
+      {onClick && <span style={{ fontSize: 9, color: "#4a6a9a", marginTop: 2 }}>Tap to view →</span>}
+    </div>
+  );
+}
+
+function TransactionDrillDown({ mode, onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [transactions, setTransactions] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await getTransactions(1);
+        if (cancelled) return;
+        const all = data.transactions ?? [];
+        const filtered = mode === "earned"
+          ? all.filter((t) => (parseFloat(t.actual_earning) || 0) > 0)
+              .sort((a, b) => (parseFloat(b.actual_earning) || 0) - (parseFloat(a.actual_earning) || 0))
+          : all.filter((t) => (parseFloat(t.potential_saving) || 0) > 0)
+              .sort((a, b) => (parseFloat(b.potential_saving) || 0) - (parseFloat(a.potential_saving) || 0));
+        setTransactions(filtered);
+      } catch (err) {
+        setError(err?.message || "Could not load your transactions.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [mode]);
+
+  const title = mode === "earned" ? "Transactions Where You Earned" : "Transactions Where You Missed Out";
+  const accent = mode === "earned" ? "#4ade80" : "#f87171";
+
+  return (
+    <div style={s.container}>
+      <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
+        <button
+          onClick={onBack}
+          style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}
+        >
+          ←
+        </button>
+        <div style={s.headerTitle}>{title}</div>
+      </div>
+
+      {loading && <div style={s.stateWrap}><span style={s.stateText}>Loading…</span></div>}
+      {error && <div style={s.stateWrap}><span style={s.errorText}>{error}</span></div>}
+
+      {!loading && !error && transactions.length === 0 && (
+        <div style={s.stateWrap}><span style={s.stateText}>No transactions here yet.</span></div>
+      )}
+
+      {!loading && !error && transactions.length > 0 && (
+        <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {transactions.map((t) => {
+            const amountShown = mode === "earned" ? t.actual_earning : t.potential_saving;
+            return (
+              <div key={t.id} style={{
+                background: NAVY_CARD, border: `1px solid ${accent}33`, borderRadius: 12,
+                padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{t.merchant_name}</span>
+                  <span style={{ fontSize: 10, color: "#7a9bcc" }}>{t.bank_name} {t.card_name}</span>
+                  <span style={{ fontSize: 9, color: "#4a6a9a" }}>
+                    {new Date(t.transaction_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    {" · "}₹{Number(t.amount).toLocaleString("en-IN")} spent
+                  </span>
+                </div>
+                <span style={{ fontSize: 15, fontWeight: 800, color: accent }}>
+                  {mode === "earned" ? "+" : "-"}₹{Number(amountShown).toLocaleString("en-IN")}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -317,6 +399,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddCard, setShowAddCard] = useState(false);
+  const [drillDown, setDrillDown] = useState(null); // null | "earned" | "missed"
 
   async function loadDashboard() {
     setLoading(true);
@@ -335,6 +418,10 @@ export default function Dashboard() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  if (drillDown) {
+    return <TransactionDrillDown mode={drillDown} onBack={() => setDrillDown(null)} />;
+  }
 
   if (showAddCard) {
     return (
@@ -417,8 +504,8 @@ export default function Dashboard() {
       </div>
 
       <div style={s.strip}>
-        <MetricBox label="Earned" value={formatRupee(financial.total_earned)} sub={disclaimers.financial_summary ? undefined : "so far"} color="#4ade80" />
-        <MetricBox label="Missed" value={formatRupee(financial.total_missed)} sub="suboptimal use" color="#f87171" />
+        <MetricBox label="Earned" value={formatRupee(financial.total_earned)} sub={disclaimers.financial_summary ? undefined : "so far"} color="#4ade80" onClick={() => setDrillDown("earned")} />
+        <MetricBox label="Missed" value={formatRupee(financial.total_missed)} sub="suboptimal use" color="#f87171" onClick={() => setDrillDown("missed")} />
         <MetricBox label="Net Impact" value={formatRupee(financial.net_impact)} sub="earned − missed" color={GOLD} />
       </div>
       <div style={{ padding: "0 16px 4px", fontSize: 9, color: "#4a6a9a", fontStyle: "italic" }}>
