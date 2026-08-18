@@ -32,6 +32,8 @@ type ScoredCard = {
   card_name: string;
   rupee_value: number;
   base_rupee_value: number;
+  base_points?: number | null;
+  earning_unit?: "points" | "rupees" | null;
   applied_offer?: {
     discount_type: string;
     offer_value: number;
@@ -1033,7 +1035,14 @@ function PayScreen() {
 
           {showBreakdown && (
             <div style={s.breakdownBox}>
-              <div style={s.breakdownRow}><span style={s.breakdownKey}>Base Reward</span><span style={s.breakdownVal}>{formatRupeeEst(best.base_rupee_value)}</span></div>
+              <div style={s.breakdownRow}>
+                <span style={s.breakdownKey}>Base Reward</span>
+                <span style={s.breakdownVal}>
+                  {best.earning_unit === "points" && best.base_points != null
+                    ? `${best.base_points.toLocaleString("en-IN")} pts (~${formatRupeeEst(best.base_rupee_value)})`
+                    : formatRupeeEst(best.base_rupee_value)}
+                </span>
+              </div>
               {best.applied_offer && (
                 <>
                   <div style={s.breakdownDivider} />
