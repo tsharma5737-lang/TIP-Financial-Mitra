@@ -1425,7 +1425,18 @@ function PayScreen() {
 
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Merchant Name</label>
-              <input type="text" placeholder="e.g. Swiggy, Amazon, Zomato" value={merchant} onChange={(e) => setMerchant(e.target.value)} style={s.textInput} />
+              <input
+                type="text"
+                placeholder="e.g. Swiggy, Amazon, Zomato"
+                value={merchant}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMerchant(val);
+                  const guessed = getCategory({ vpa: "", merchantName: val });
+                  if (guessed) setSelectedHuman(guessed);
+                }}
+                style={s.textInput}
+              />
             </div>
 
             <div style={s.fieldWrapper}>
