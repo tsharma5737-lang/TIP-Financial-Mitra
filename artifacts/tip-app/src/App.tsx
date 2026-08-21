@@ -782,7 +782,10 @@ function PayScreen() {
   // Manual-entry state
   const [amount, setAmount]     = useState("");
   const [merchant, setMerchant] = useState("");
-  const [category, setCategory] = useState("dining");
+  // category/CATEGORIES removed - was a second, disconnected system from
+  // selectedHuman/HUMAN_CATEGORIES, defaulting to "dining" and never
+  // updated by merchant auto-detection. Unified onto selectedHuman, the
+  // one real category state, used consistently across both screens now.
 
   const DEFAULT_DISCLAIMER = "Benefits shown are based on published rates and may vary. Verify with your bank before paying.";
   // ⚠️ PENDING LEGAL REVIEW (flagged 15-Aug-2026): wording changed from the original
@@ -896,7 +899,7 @@ function PayScreen() {
     setPaySuccess(null);
     setConfirmError("");
     setResults(null);
-    setAmount(""); setMerchant(""); setCategory("dining");
+    setAmount(""); setMerchant(""); setSelectedHuman("");
     setConfirmAmount(""); setScannedVpa(""); setScannedName("");
     setScannedType("UPI"); setScannedCity(""); setScannedIsUrl(false);
     setScannedIsPersonal(false); setScannedBank("");
@@ -1451,8 +1454,9 @@ function PayScreen() {
 
             <div style={s.fieldWrapper}>
               <label style={s.fieldLabel}>Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} style={s.select}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+              <select value={selectedHuman} onChange={(e) => setSelectedHuman(e.target.value)} style={s.select}>
+                <option value="" disabled>Select category…</option>
+                {HUMAN_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
