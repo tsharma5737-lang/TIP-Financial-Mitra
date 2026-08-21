@@ -1171,7 +1171,7 @@ function PayScreen() {
 
               {/* Manual fallback */}
               <button
-                onClick={() => setScanState("manual")}
+                onClick={() => { setDetectedCat(null); setSelectedHuman(""); setScanState("manual"); }}
                 style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 13, fontWeight: 600, padding: "4px 0", cursor: "pointer", textDecoration: "underline", textDecorationColor: "#3a5a8a", fontFamily: "inherit", alignSelf: "center" as const }}
               >
                 Enter manually instead →
@@ -1404,7 +1404,7 @@ function PayScreen() {
                 <button onClick={() => { setResults(null); setScanState("camera"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a" }}>
                   Scan again
                 </button>
-                <button onClick={() => { setResults(null); setScanState("manual"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a" }}>
+                <button onClick={() => { setResults(null); setDetectedCat(null); setSelectedHuman(""); setScanState("manual"); }} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationColor: "#3a5a8a" }}>
                   Enter manually instead
                 </button>
               </div>
