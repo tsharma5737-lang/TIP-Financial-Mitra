@@ -650,6 +650,20 @@ function QRScannerView({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanError, setScanError] = useState("");
 
+  // The scanning library's .stop() can throw SYNCHRONOUSLY (not just via a
+  // rejected promise) if called on a scanner that's already stopped or
+  // mid-transition - a plain .catch() chain never catches a synchronous
+  // throw, since the exception happens before a promise even gets
+  // returned to attach .catch() to. This wraps both cases safely.
+  function safeStop(scanner: Html5Qrcode) {
+    try {
+      const result: any = scanner.stop();
+      if (result && typeof result.catch === "function") result.catch(() => {});
+    } catch {
+      // Already stopped or not running - this is expected and harmless.
+    }
+  }
+
   useEffect(() => {
     const qrCode = new Html5Qrcode("tip-qr-reader", /* verbose= */ false);
     scannerRef.current = qrCode;
@@ -660,7 +674,7 @@ function QRScannerView({
       const onSuccess = (decodedText: string) => {
         if (cancelled) return;
         cancelled = true;
-        qrCode.stop().catch(() => {});
+        safeStop(qrCode);
         // This callback runs inside the scanning library's own internal loop,
         // NOT a normal React event - an exception here is invisible to
         // everything else in the app, including React's own error handling,
@@ -704,7 +718,7 @@ function QRScannerView({
 
     return () => {
       cancelled = true;
-      qrCode.stop().catch(() => {});
+      safeStop(qrCode);
     };
   }, []);
 
