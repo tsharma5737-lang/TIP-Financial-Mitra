@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 // @ts-ignore
 import Dashboard from "./Dashboard.jsx";
@@ -1498,6 +1498,45 @@ function PayScreen() {
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+// The correct, comprehensive fix for "blank screen, no error message,
+// anywhere" - a React error boundary catches crashes during rendering
+// itself, regardless of where in the tree below it they occur, not just
+// one specific callback. Must be a class component - this is a hard
+// React requirement, functional components cannot implement this.
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; errorMessage: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error?.message || "Something went wrong." };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("TIP crashed:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ background: "#0D1A2E", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}>
+          <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, textAlign: "center" }}>Something went wrong on this screen.</span>
+          <span style={{ color: "#7a9bcc", fontSize: 12, textAlign: "center" }}>{this.state.errorMessage}</span>
+          <button
+            onClick={() => this.setState({ hasError: false, errorMessage: "" })}
+            style={{ background: "#C9A84C", color: "#0a1628", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [onboarded, setOnboarded] = useState<boolean>(
     () => typeof window !== "undefined" && !!getToken()
@@ -1588,7 +1627,7 @@ export default function App() {
 
   return (
     <div style={s.app}>
-      {renderScreen()}
+      <ErrorBoundary>{renderScreen()}</ErrorBoundary>
       <BottomNav active={activeTab} onTabChange={setActiveTab} />
     </div>
   );
