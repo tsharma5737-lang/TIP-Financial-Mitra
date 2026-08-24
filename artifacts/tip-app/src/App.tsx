@@ -522,6 +522,14 @@ function isPersonalUPI(vpa: string): boolean {
   if (!vpa) return false;
   if (/^\d{10}@/.test(vpa)) return true;           // 10-digit mobile VPAs are always personal
   for (const p of MERCHANT_UPI_PATTERNS) { if (p.test(vpa)) return false; } // merchant beats personal
+  // A known brand name in the VPA's local part (before @) is a stronger,
+  // more reliable merchant signal than the bank-handle suffix alone -
+  // some real merchants (e.g. Myntra) use a Yes Bank @ybl handle, the
+  // same generic suffix format individuals get, so the suffix pattern
+  // below can't distinguish them on its own. Check known merchant names
+  // first - same list already used for category detection.
+  const localPart = vpa.split("@")[0]?.toLowerCase() ?? "";
+  for (const key of Object.keys(VPA_CATEGORY_MAP)) { if (localPart.includes(key)) return false; }
   for (const p of PERSONAL_UPI_PATTERNS)  { if (p.test(vpa)) return true;  }
   return false;
 }
