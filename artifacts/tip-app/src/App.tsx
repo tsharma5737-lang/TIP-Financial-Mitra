@@ -661,7 +661,18 @@ function QRScannerView({
         if (cancelled) return;
         cancelled = true;
         qrCode.stop().catch(() => {});
-        onScanned(decodedText);
+        // This callback runs inside the scanning library's own internal loop,
+        // NOT a normal React event - an exception here is invisible to
+        // everything else in the app, including React's own error handling,
+        // and can leave the screen blank with zero indication anything went
+        // wrong. Wrapping it here converts any such failure into a real,
+        // visible message instead.
+        try {
+          onScanned(decodedText);
+        } catch (err) {
+          console.error("QR processing error:", err, "Raw scanned text:", decodedText);
+          setScanError("Couldn't read this QR code properly. Please try scanning again, or enter the details manually.");
+        }
       };
       const onFrameError = () => {}; // per-frame errors are normal — ignore
 
