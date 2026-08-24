@@ -671,7 +671,8 @@ function QRScannerView({
           onScanned(decodedText);
         } catch (err) {
           console.error("QR processing error:", err, "Raw scanned text:", decodedText);
-          setScanError("Couldn't read this QR code properly. Please try scanning again, or enter the details manually.");
+          const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+          setScanError(`Couldn't read this QR code properly. Debug detail (please screenshot): ${detail}`);
         }
       };
       const onFrameError = () => {}; // per-frame errors are normal — ignore
@@ -1506,14 +1507,27 @@ function PayScreen() {
 // React requirement, functional components cannot implement this.
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; errorMessage: string }
+  { hasError: boolean; errorDetail: string }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, errorMessage: "" };
+    this.state = { hasError: false, errorDetail: "" };
   }
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, errorMessage: error?.message || "Something went wrong." };
+  static getDerivedStateFromError(error: unknown) {
+    // Capture as much real detail as possible directly here, so the raw
+    // cause is visible on screen - no console/USB debugging needed to
+    // diagnose a real-world failure.
+    let detail = "";
+    try {
+      if (error instanceof Error) {
+        detail = `${error.name}: ${error.message}`;
+      } else {
+        detail = String(error);
+      }
+    } catch {
+      detail = "Unknown error (could not be stringified)";
+    }
+    return { hasError: true, errorDetail: detail || "Unknown error (empty message)" };
   }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("TIP crashed:", error, info.componentStack);
@@ -1523,9 +1537,12 @@ class ErrorBoundary extends React.Component<
       return (
         <div style={{ background: "#0D1A2E", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}>
           <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, textAlign: "center" }}>Something went wrong on this screen.</span>
-          <span style={{ color: "#7a9bcc", fontSize: 12, textAlign: "center" }}>{this.state.errorMessage}</span>
+          <div style={{ background: "#1a2f50", border: "1px solid #f87171", borderRadius: 10, padding: 14, maxWidth: 340, width: "100%" }}>
+            <span style={{ color: "#f87171", fontSize: 11, fontFamily: "monospace", wordBreak: "break-word" as const, whiteSpace: "pre-wrap" as const }}>{this.state.errorDetail}</span>
+          </div>
+          <span style={{ color: "#7a9bcc", fontSize: 11, textAlign: "center" }}>Please screenshot the box above and share it.</span>
           <button
-            onClick={() => this.setState({ hasError: false, errorMessage: "" })}
+            onClick={() => this.setState({ hasError: false, errorDetail: "" })}
             style={{ background: "#C9A84C", color: "#0a1628", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
           >
             Try Again
