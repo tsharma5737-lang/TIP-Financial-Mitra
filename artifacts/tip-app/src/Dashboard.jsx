@@ -676,7 +676,7 @@ function CardDetailView({ card, daysElapsed, benefitRows, onBack, onBenefitsChan
         <div style={{ padding: "4px 16px 16px" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>🎁 Benefits</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {benefitRows.map((row) => {
+            {[...benefitRows].sort((a, b) => CATEGORY_ORDER.indexOf(getBenefitCategory(a.benefit_type)) - CATEGORY_ORDER.indexOf(getBenefitCategory(b.benefit_type))).map((row) => {
               const key = row.benefit_type;
               const label = BENEFIT_TYPE_LABELS[row.benefit_type] || row.benefit_type;
 
