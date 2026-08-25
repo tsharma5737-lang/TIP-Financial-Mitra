@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getInsightsDashboard, getTransactions } from "./lib/apiClient";
+import { getInsightsDashboard, getTransactions, getBenefitSummary, selfReportBenefitUsage, confirmMilestoneChoice } from "./lib/apiClient";
 import AddCard from "./AddCard.jsx";
 
 const NAVY      = "#0D1A2E";
@@ -234,6 +234,179 @@ function TransactionDrillDown({ mode, onBack }) {
   );
 }
 
+const BENEFIT_TYPE_LABELS = {
+  lounge_domestic: "Domestic Lounge Access", lounge_international: "International Lounge Access",
+  lounge_railway: "Railway Lounge Access", golf_primary: "Golf Access", golf_secondary: "Golf Access (Secondary)",
+  movie_primary: "Movie/Event Tickets", movie_secondary: "Movie/Event Tickets (Secondary)", milestone: "Annual Milestone",
+};
+
+function BenefitsDrillDown({ onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [reportingKey, setReportingKey] = useState(null);
+  const [reportCount, setReportCount] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await getBenefitSummary();
+      setRows(data.summary ?? []);
+    } catch (err) {
+      setError(err?.message || "Could not load your benefits.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function submitSelfReport(row) {
+    const count = parseInt(reportCount, 10);
+    if (isNaN(count) || count < 0) return;
+    setSaving(true);
+    try {
+      await selfReportBenefitUsage({
+        card_id: row.card_id, benefit_type: row.benefit_type,
+        period_start: row.period_start, count,
+      });
+      setReportingKey(null);
+      setReportCount("");
+      await load();
+    } catch (err) {
+      setError(err?.message || "Could not save - please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function pickMilestoneChoice(row, choice) {
+    setSaving(true);
+    try {
+      await confirmMilestoneChoice({ card_id: row.card_id, choice_id: choice });
+      await load();
+    } catch (err) {
+      setError(err?.message || "Could not save your choice - please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const grouped = rows.reduce((acc, r) => {
+    (acc[r.card_name] ??= []).push(r);
+    return acc;
+  }, {});
+
+  return (
+    <div style={s.container}>
+      <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
+        <div style={s.headerTitle}>Your Benefits</div>
+      </div>
+
+      {loading && <div style={s.stateWrap}><span style={s.stateText}>Loading…</span></div>}
+      {error && <div style={s.stateWrap}><span style={s.errorText}>{error}</span></div>}
+      {!loading && !error && rows.length === 0 && (
+        <div style={s.stateWrap}><span style={s.stateText}>No trackable perks on your cards yet - add a card with golf, lounge, movie, or milestone benefits to see them here.</span></div>
+      )}
+
+      {!loading && !error && Object.keys(grouped).length > 0 && (
+        <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
+          {Object.entries(grouped).map(([cardName, cardRows]) => (
+            <div key={cardName}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cardName}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {cardRows.map((row) => {
+                  const key = `${row.card_id}-${row.benefit_type}`;
+                  const label = BENEFIT_TYPE_LABELS[row.benefit_type] || row.benefit_type;
+
+                  if (row.benefit_type === "milestone") {
+                    return (
+                      <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{label}</div>
+                        <div style={{ background: "#0a1628", borderRadius: 8, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                          <div style={{ background: GOLD, height: "100%", width: `${row.pct_complete}%` }} />
+                        </div>
+                        <div style={{ fontSize: 11, color: "#7a9bcc" }}>
+                          ₹{Number(row.spend_progress).toLocaleString("en-IN")} of ₹{Number(row.spend_target).toLocaleString("en-IN")} ({row.pct_complete}%)
+                        </div>
+                        {row.reward_type === "choice" ? (
+                          <div style={{ marginTop: 8 }}>
+                            {row.confirmation_message && (
+                              <div style={{ fontSize: 11, color: row.qualified ? "#4ade80" : "#7a9bcc", marginBottom: row.qualified && !row.selected_choice ? 8 : 0 }}>{row.confirmation_message}</div>
+                            )}
+                            {row.qualified && !row.selected_choice && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {(row.choices || []).map((c) => (
+                                  <button key={c} disabled={saving} onClick={() => pickMilestoneChoice(row, c)}
+                                    style={{ background: "#1a2f50", border: "1px solid #C9A84C", color: GOLD, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                    {c}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          row.benefit_description && <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 6 }}>{row.benefit_description}{row.benefit_value_rupees ? ` (~₹${row.benefit_value_rupees})` : ""}</div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  if (row.type === "unlimited") {
+                    return (
+                      <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#4ade80" }}>Unlimited</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{row.used} of {row.allocated} used</span>
+                      </div>
+                      {row.pending_confirmation > 0 && (
+                        <div style={{ fontSize: 10, color: "#f0b429", marginTop: 4 }}>{row.pending_confirmation} visit(s) awaiting your confirmation</div>
+                      )}
+                      {row.spend_threshold && (
+                        <div style={{ fontSize: 10, color: "#7a9bcc", marginTop: 4 }}>Requires ₹{Number(row.spend_threshold).toLocaleString("en-IN")} spend to unlock</div>
+                      )}
+                      {reportingKey === key ? (
+                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                          <input
+                            type="number" min="0" autoFocus placeholder="Times used"
+                            value={reportCount} onChange={(e) => setReportCount(e.target.value)}
+                            style={{ flex: 1, background: "#0a1628", border: "1px solid #1e3a6a", borderRadius: 8, padding: "8px 10px", color: "#fff", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}
+                          />
+                          <button disabled={saving} onClick={() => submitSelfReport(row)} style={{ background: GOLD, color: "#0a1628", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                            {saving ? "..." : "Save"}
+                          </button>
+                          <button disabled={saving} onClick={() => { setReportingKey(null); setReportCount(""); }} style={{ background: "transparent", border: "1px solid #2a4a7a", color: "#7a9bcc", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <span onClick={() => { setReportingKey(key); setReportCount(String(row.used)); }} style={{ display: "inline-block", marginTop: 8, fontSize: 10, color: "#7a9bcc", textDecoration: "underline", cursor: "pointer" }}>
+                          Update how many you've used
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PortfolioHealth({ cards, bestCard, worstCard, disclaimer }) {
   const avgScore = cards.length
     ? Math.round(cards.reduce((sum, c) => sum + (Number(c.efficiency_score) || 0), 0) / cards.length)
@@ -419,6 +592,10 @@ export default function Dashboard() {
     loadDashboard();
   }, []);
 
+  if (drillDown === "benefits") {
+    return <BenefitsDrillDown onBack={() => setDrillDown(null)} />;
+  }
+
   if (drillDown) {
     return <TransactionDrillDown mode={drillDown} onBack={() => setDrillDown(null)} />;
   }
@@ -510,6 +687,23 @@ export default function Dashboard() {
       </div>
       <div style={{ padding: "0 16px 4px", fontSize: 9, color: "#4a6a9a", fontStyle: "italic" }}>
         {disclaimers.financial_summary || DEFAULT_FINANCIAL_DISCLAIMER}
+      </div>
+
+      <div style={{ padding: "0 16px 16px" }}>
+        <div
+          onClick={() => setDrillDown("benefits")}
+          style={{
+            background: `linear-gradient(135deg, ${NAVY_CARD}, ${NAVY_LIGHT})`, border: `1px solid ${GOLD}55`,
+            borderRadius: 14, padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>🎁 Your Benefits</span>
+            <span style={{ fontSize: 10, color: "#7a9bcc" }}>Golf, lounge, movie tickets & milestones — track what you're actually using</span>
+          </div>
+          <span style={{ color: GOLD, fontSize: 18, fontWeight: 800 }}>→</span>
+        </div>
       </div>
 
       <PortfolioHealth cards={cards} bestCard={bestCard} worstCard={worstCard} disclaimer={disclaimers.portfolio_health} />

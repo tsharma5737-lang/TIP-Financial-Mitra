@@ -72,6 +72,13 @@ export const confirmTransaction = (params: {
 
 export const getTransactions = (page: number = 1) => request(`/api/transactions?page=${page}`);
 
+// ---- Benefit counters (golf, lounge, movie, milestones) ----
+export const getBenefitSummary = () => request("/api/benefits/summary");
+export const selfReportBenefitUsage = (params: { card_id: string; benefit_type: string; period_start: string; count: number }) =>
+  request("/api/benefits/self-report", { method: "POST", body: JSON.stringify(params) });
+export const confirmMilestoneChoice = (params: { card_id: string; choice_id: string }) =>
+  request("/api/benefits/confirm-milestone-choice", { method: "POST", body: JSON.stringify(params) });
+
 // ---- Dashboard / Rewards (for later tasks) ----
 export const getInsightsDashboard = (period?: string) =>
   request(`/api/insights/dashboard${period ? `?period=${period}` : ""}`);
