@@ -284,9 +284,9 @@ function computeCategorySummaries(rows) {
   }).filter(Boolean);
 }
 
-function BenefitsDrillDown({ initialRows, onBack, onChanged }) {
+function BenefitsDrillDown({ initialRows, initialCategory, onBack, onChanged }) {
   const [rows, setRows] = useState(initialRows ?? []);
-  const [activeCategory, setActiveCategory] = useState(null); // null = summary view
+  const [activeCategory, setActiveCategory] = useState(initialCategory ?? null); // null = summary view
   const [reportingKey, setReportingKey] = useState(null);
   const [reportCount, setReportCount] = useState("");
   const [saving, setSaving] = useState(false);
@@ -339,46 +339,10 @@ function BenefitsDrillDown({ initialRows, onBack, onChanged }) {
     return acc;
   }, {});
 
-  // ── Level 1: Summary tiles ─────────────────────────────────────────────
-  if (!activeCategory) {
-    const summaries = computeCategorySummaries(rows);
-    return (
-      <div style={s.container}>
-        <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
-          <div style={s.headerTitle}>Your Benefits</div>
-        </div>
-
-        {error && <div style={s.stateWrap}><span style={s.errorText}>{error}</span></div>}
-        {rows.length === 0 && (
-          <div style={s.stateWrap}><span style={s.stateText}>No trackable perks on your cards yet - add a card with golf, lounge, movie, or milestone benefits to see them here.</span></div>
-        )}
-
-        {rows.length > 0 && (
-          <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {summaries.map(({ cat, subtitle }) => (
-              <div
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                style={{
-                  background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 14,
-                  padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
-                  <span style={{ fontSize: 11, color: "#7a9bcc" }}>{subtitle}</span>
-                </div>
-                <span style={{ color: GOLD, fontSize: 18, fontWeight: 800 }}>→</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Level 2: Per-card detail for one category ───────────────────────────
+  // Always shows detail for one category - the Dashboard's own inline
+  // tiles now serve as the summary view, so a separate one here would
+  // just be a redundant extra screen between tapping a tile and seeing
+  // the actual per-card detail.
   const detailRows = byCategory[activeCategory] || [];
   const grouped = detailRows.reduce((acc, r) => {
     (acc[r.card_name] ??= []).push(r);
@@ -388,7 +352,7 @@ function BenefitsDrillDown({ initialRows, onBack, onChanged }) {
   return (
     <div style={s.container}>
       <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => setActiveCategory(null)} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
+        <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
         <div style={s.headerTitle}>{CATEGORY_ICONS[activeCategory]} {CATEGORY_LABELS[activeCategory]}</div>
       </div>
 
@@ -694,7 +658,12 @@ function CardDetailView({ card, daysElapsed, benefitRows, onBack, onBenefitsChan
     <div style={s.container}>
       <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
-        <div style={s.headerTitle}>{card.card_name}</div>
+        <div style={s.headerTitle}>Card Details</div>
+      </div>
+
+      <div style={{ padding: "16px 16px 4px", textAlign: "center" }}>
+        <div style={{ fontSize: 11, color: "#7a9bcc", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{card.bank_name}</div>
+        <div style={{ fontSize: 22, color: "#fff", fontWeight: 900, letterSpacing: 0.3 }}>{card.card_name}</div>
       </div>
 
       <div style={{ padding: "12px 16px" }}>
@@ -851,8 +820,8 @@ export default function Dashboard() {
     );
   }
 
-  if (drillDown === "benefits") {
-    return <BenefitsDrillDown initialRows={benefitRows} onBack={() => setDrillDown(null)} onChanged={loadBenefits} />;
+  if (CATEGORY_ORDER.includes(drillDown)) {
+    return <BenefitsDrillDown initialRows={benefitRows} initialCategory={drillDown} onBack={() => setDrillDown(null)} onChanged={loadBenefits} />;
   }
 
   if (drillDown) {
@@ -949,31 +918,34 @@ export default function Dashboard() {
       </div>
 
       {benefitRows.length > 0 && (
-        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5 }}>🎁 Your Benefits</div>
-          {computeCategorySummaries(benefitRows).map(({ cat, subtitle }) => (
-            <div
-              key={cat}
-              onClick={() => setDrillDown("benefits")}
-              style={{
-                background: `linear-gradient(135deg, ${NAVY_CARD}, ${NAVY_LIGHT})`, border: `1px solid ${GOLD}44`,
-                borderRadius: 12, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
-                <span style={{ fontSize: 10, color: "#7a9bcc" }}>{subtitle}</span>
+        <div style={{ padding: "0 16px 16px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>🎁 Your Benefits</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {computeCategorySummaries(benefitRows).map(({ cat, subtitle }) => (
+              <div
+                key={cat}
+                onClick={() => setDrillDown(cat)}
+                style={{
+                  background: `linear-gradient(135deg, ${NAVY_CARD}, ${NAVY_LIGHT})`, border: `1px solid ${GOLD}44`,
+                  borderRadius: 12, padding: "14px 12px", cursor: "pointer",
+                  display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 92,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 20 }}>{CATEGORY_ICONS[cat]}</span>
+                  <span style={{ color: GOLD, fontSize: 14, fontWeight: 800 }}>→</span>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", marginBottom: 2 }}>{CATEGORY_LABELS[cat]}</div>
+                  <div style={{ fontSize: 10, color: "#7a9bcc", lineHeight: 1.3 }}>{subtitle}</div>
+                </div>
               </div>
-              <span style={{ color: GOLD, fontSize: 16, fontWeight: 800 }}>→</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       <PortfolioHealth cards={cards} bestCard={bestCard} worstCard={worstCard} disclaimer={disclaimers.portfolio_health} />
-
-      <AnnualisedSection cards={cards} daysElapsed={daysElapsed} disclaimer={disclaimers.portfolio_health} />
 
       <div style={s.sectionHeader}>
         <span style={s.sectionTitle}>⚡ Card Portfolio</span>
@@ -994,6 +966,8 @@ export default function Dashboard() {
           <CardTile key={card.card_id} card={card} daysElapsed={daysElapsed} onClick={() => setViewingCardId(card.card_id)} />
         ))}
       </div>
+
+      <AnnualisedSection cards={cards} daysElapsed={daysElapsed} disclaimer={disclaimers.portfolio_health} />
     </div>
   );
 }
