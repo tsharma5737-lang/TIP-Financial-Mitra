@@ -1269,7 +1269,6 @@ function PayScreen() {
                 {/* Personal summary card */}
                 <div style={{ background: "#0d1f10", border: "1px solid #4ade8044", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 8 }}>
                   <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>✓ Personal UPI Detected</span>
-                  <div style={{ color: "#f87171", fontSize: 10, fontFamily: "monospace" }}>DEBUG type={scannedType}</div>
                   <div>
                     <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>{scannedName}</div>
                     <div style={{ color: "#7a9bcc", fontSize: 11, fontFamily: "monospace", letterSpacing: 0.3 }}>{scannedVpa}</div>
