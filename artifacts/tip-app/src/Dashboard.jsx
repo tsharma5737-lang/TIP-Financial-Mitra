@@ -256,29 +256,51 @@ function getBenefitCategory(benefitType) {
   return "other";
 }
 
-function BenefitsDrillDown({ onBack }) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [rows, setRows] = useState([]);
+function computeCategorySummaries(rows) {
+  const byCategory = rows.reduce((acc, r) => {
+    const cat = getBenefitCategory(r.benefit_type);
+    (acc[cat] ??= []).push(r);
+    return acc;
+  }, {});
+  return CATEGORY_ORDER.map((cat) => {
+    const catRows = byCategory[cat] || [];
+    if (catRows.length === 0) return null;
+    const cardCount = new Set(catRows.map((r) => r.card_id)).size;
+    let subtitle;
+    if (cat === "milestone") {
+      const avgPct = Math.round(catRows.reduce((sum, r) => sum + (r.pct_complete || 0), 0) / catRows.length);
+      subtitle = `${cardCount} card${cardCount > 1 ? "s" : ""} tracked · ${avgPct}% average progress`;
+    } else {
+      const unlimitedCount = catRows.filter((r) => r.type === "unlimited").length;
+      const countRows = catRows.filter((r) => r.type === "count");
+      const totalUsed = countRows.reduce((sum, r) => sum + (r.used || 0), 0);
+      const totalAllocated = countRows.reduce((sum, r) => sum + (r.allocated || 0), 0);
+      const parts = [];
+      if (unlimitedCount > 0) parts.push(`${unlimitedCount} unlimited`);
+      if (countRows.length > 0) parts.push(`${totalUsed} of ${totalAllocated} used`);
+      subtitle = `${cardCount} card${cardCount > 1 ? "s" : ""} · ${parts.join(", ")}`;
+    }
+    return { cat, subtitle, rows: catRows };
+  }).filter(Boolean);
+}
+
+function BenefitsDrillDown({ initialRows, onBack, onChanged }) {
+  const [rows, setRows] = useState(initialRows ?? []);
   const [activeCategory, setActiveCategory] = useState(null); // null = summary view
   const [reportingKey, setReportingKey] = useState(null);
   const [reportCount, setReportCount] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  async function load() {
-    setLoading(true);
-    setError("");
+  async function reload() {
     try {
       const data = await getBenefitSummary();
       setRows(data.summary ?? []);
+      onChanged?.();
     } catch (err) {
-      setError(err?.message || "Could not load your benefits.");
-    } finally {
-      setLoading(false);
+      setError(err?.message || "Could not refresh - your last change may not be reflected yet.");
     }
   }
-
-  useEffect(() => { load(); }, []);
 
   async function submitSelfReport(row) {
     const count = parseInt(reportCount, 10);
@@ -291,7 +313,7 @@ function BenefitsDrillDown({ onBack }) {
       });
       setReportingKey(null);
       setReportCount("");
-      await load();
+      await reload();
     } catch (err) {
       setError(err?.message || "Could not save - please try again.");
     } finally {
@@ -303,7 +325,7 @@ function BenefitsDrillDown({ onBack }) {
     setSaving(true);
     try {
       await confirmMilestoneChoice({ card_id: row.card_id, choice_id: choice });
-      await load();
+      await reload();
     } catch (err) {
       setError(err?.message || "Could not save your choice - please try again.");
     } finally {
@@ -319,6 +341,7 @@ function BenefitsDrillDown({ onBack }) {
 
   // ── Level 1: Summary tiles ─────────────────────────────────────────────
   if (!activeCategory) {
+    const summaries = computeCategorySummaries(rows);
     return (
       <div style={s.container}>
         <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
@@ -326,51 +349,29 @@ function BenefitsDrillDown({ onBack }) {
           <div style={s.headerTitle}>Your Benefits</div>
         </div>
 
-        {loading && <div style={s.stateWrap}><span style={s.stateText}>Loading…</span></div>}
         {error && <div style={s.stateWrap}><span style={s.errorText}>{error}</span></div>}
-        {!loading && !error && rows.length === 0 && (
+        {rows.length === 0 && (
           <div style={s.stateWrap}><span style={s.stateText}>No trackable perks on your cards yet - add a card with golf, lounge, movie, or milestone benefits to see them here.</span></div>
         )}
 
-        {!loading && !error && rows.length > 0 && (
+        {rows.length > 0 && (
           <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {CATEGORY_ORDER.map((cat) => {
-              const catRows = byCategory[cat] || [];
-              if (catRows.length === 0) return null;
-              const cardCount = new Set(catRows.map((r) => r.card_id)).size;
-
-              let subtitle;
-              if (cat === "milestone") {
-                const avgPct = Math.round(catRows.reduce((s, r) => s + (r.pct_complete || 0), 0) / catRows.length);
-                subtitle = `${cardCount} card${cardCount > 1 ? "s" : ""} tracked · ${avgPct}% average progress`;
-              } else {
-                const unlimitedCount = catRows.filter((r) => r.type === "unlimited").length;
-                const countRows = catRows.filter((r) => r.type === "count");
-                const totalUsed = countRows.reduce((s, r) => s + (r.used || 0), 0);
-                const totalAllocated = countRows.reduce((s, r) => s + (r.allocated || 0), 0);
-                const parts = [];
-                if (unlimitedCount > 0) parts.push(`${unlimitedCount} unlimited`);
-                if (countRows.length > 0) parts.push(`${totalUsed} of ${totalAllocated} used`);
-                subtitle = `${cardCount} card${cardCount > 1 ? "s" : ""} · ${parts.join(", ")}`;
-              }
-
-              return (
-                <div
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  style={{
-                    background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 14,
-                    padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
-                    <span style={{ fontSize: 11, color: "#7a9bcc" }}>{subtitle}</span>
-                  </div>
-                  <span style={{ color: GOLD, fontSize: 18, fontWeight: 800 }}>→</span>
+            {summaries.map(({ cat, subtitle }) => (
+              <div
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                style={{
+                  background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 14,
+                  padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
+                  <span style={{ fontSize: 11, color: "#7a9bcc" }}>{subtitle}</span>
                 </div>
-              );
-            })}
+                <span style={{ color: GOLD, fontSize: 18, fontWeight: 800 }}>→</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -583,7 +584,7 @@ function AnnualisedSection({ cards, daysElapsed, disclaimer }) {
   );
 }
 
-function CardTile({ card, daysElapsed }) {
+function CardTile({ card, daysElapsed, onClick }) {
   const appear = scoreAppearance(card.score_label);
   const insight = cardInsightText(card);
   const accentColor = card.is_best ? "#4ade80" : card.is_worst ? "#f87171" : GOLD;
@@ -591,7 +592,7 @@ function CardTile({ card, daysElapsed }) {
   const ratio = card.annual_fee > 0 ? projectedAnnual / card.annual_fee : null;
 
   return (
-    <div style={s.tile}>
+    <div style={{ ...s.tile, cursor: onClick ? "pointer" : "default" }} onClick={onClick}>
       <div style={s.tileAccent(accentColor)} />
 
       <div style={s.tileTopRow}>
@@ -643,6 +644,156 @@ function CardTile({ card, daysElapsed }) {
   );
 }
 
+function CardDetailView({ card, daysElapsed, benefitRows, onBack, onBenefitsChanged }) {
+  const [reportingKey, setReportingKey] = useState(null);
+  const [reportCount, setReportCount] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!card) {
+    return (
+      <div style={s.container}>
+        <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
+          <div style={s.headerTitle}>Card</div>
+        </div>
+        <div style={s.stateWrap}><span style={s.stateText}>Could not find this card.</span></div>
+      </div>
+    );
+  }
+
+  async function submitSelfReport(row) {
+    const count = parseInt(reportCount, 10);
+    if (isNaN(count) || count < 0) return;
+    setSaving(true);
+    try {
+      await selfReportBenefitUsage({ card_id: row.card_id, benefit_type: row.benefit_type, period_start: row.period_start, count });
+      setReportingKey(null);
+      setReportCount("");
+      onBenefitsChanged?.();
+    } catch (err) {
+      setError(err?.message || "Could not save - please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function pickMilestoneChoice(row, choice) {
+    setSaving(true);
+    try {
+      await confirmMilestoneChoice({ card_id: row.card_id, choice_id: choice });
+      onBenefitsChanged?.();
+    } catch (err) {
+      setError(err?.message || "Could not save your choice - please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={s.container}>
+      <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#7a9bcc", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
+        <div style={s.headerTitle}>{card.card_name}</div>
+      </div>
+
+      <div style={{ padding: "12px 16px" }}>
+        <CardTile card={card} daysElapsed={daysElapsed} />
+      </div>
+
+      {error && <div style={s.stateWrap}><span style={s.errorText}>{error}</span></div>}
+
+      {benefitRows.length > 0 && (
+        <div style={{ padding: "4px 16px 16px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>🎁 Benefits</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {benefitRows.map((row) => {
+              const key = row.benefit_type;
+              const label = BENEFIT_TYPE_LABELS[row.benefit_type] || row.benefit_type;
+
+              if (row.benefit_type === "milestone") {
+                return (
+                  <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{label}</div>
+                    <div style={{ background: "#0a1628", borderRadius: 8, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                      <div style={{ background: GOLD, height: "100%", width: `${row.pct_complete}%` }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: "#7a9bcc" }}>
+                      ₹{Number(row.spend_progress).toLocaleString("en-IN")} of ₹{Number(row.spend_target).toLocaleString("en-IN")} ({row.pct_complete}%)
+                    </div>
+                    {row.reward_type === "choice" ? (
+                      <div style={{ marginTop: 8 }}>
+                        {row.confirmation_message && (
+                          <div style={{ fontSize: 11, color: row.qualified ? "#4ade80" : "#7a9bcc", marginBottom: row.qualified && !row.selected_choice ? 8 : 0 }}>{row.confirmation_message}</div>
+                        )}
+                        {row.qualified && !row.selected_choice && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {(row.choices || []).map((c) => (
+                              <button key={c} disabled={saving} onClick={() => pickMilestoneChoice(row, c)}
+                                style={{ background: "#1a2f50", border: "1px solid #C9A84C", color: GOLD, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                {c}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      row.benefit_description && <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 6 }}>{row.benefit_description}{row.benefit_value_rupees ? ` (~₹${row.benefit_value_rupees})` : ""}</div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (row.type === "unlimited") {
+                return (
+                  <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#4ade80" }}>Unlimited</span>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{row.used} of {row.allocated} used</span>
+                  </div>
+                  {row.pending_confirmation > 0 && (
+                    <div style={{ fontSize: 10, color: "#f0b429", marginTop: 4 }}>{row.pending_confirmation} visit(s) awaiting your confirmation</div>
+                  )}
+                  {row.spend_threshold && (
+                    <div style={{ fontSize: 10, color: "#7a9bcc", marginTop: 4 }}>Requires ₹{Number(row.spend_threshold).toLocaleString("en-IN")} spend to unlock</div>
+                  )}
+                  {reportingKey === key ? (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <input
+                        type="number" min="0" autoFocus placeholder="Times used"
+                        value={reportCount} onChange={(e) => setReportCount(e.target.value)}
+                        style={{ flex: 1, background: "#0a1628", border: "1px solid #1e3a6a", borderRadius: 8, padding: "8px 10px", color: "#fff", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                      <button disabled={saving} onClick={() => submitSelfReport(row)} style={{ background: GOLD, color: "#0a1628", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                        {saving ? "..." : "Save"}
+                      </button>
+                      <button disabled={saving} onClick={() => { setReportingKey(null); setReportCount(""); }} style={{ background: "transparent", border: "1px solid #2a4a7a", color: "#7a9bcc", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <span onClick={() => { setReportingKey(key); setReportCount(String(row.used)); }} style={{ display: "inline-block", marginTop: 8, fontSize: 10, color: "#7a9bcc", textDecoration: "underline", cursor: "pointer" }}>
+                      Update how many you've used
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -652,6 +803,8 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [showAddCard, setShowAddCard] = useState(false);
   const [drillDown, setDrillDown] = useState(null); // null | "earned" | "missed"
+  const [benefitRows, setBenefitRows] = useState([]);
+  const [viewingCardId, setViewingCardId] = useState(null);
 
   async function loadDashboard() {
     setLoading(true);
@@ -667,12 +820,39 @@ export default function Dashboard() {
     }
   }
 
+  async function loadBenefits() {
+    try {
+      const result = await getBenefitSummary();
+      setBenefitRows(result.summary ?? []);
+    } catch {
+      setBenefitRows([]); // non-critical - dashboard still works without this section
+    }
+  }
+
   useEffect(() => {
     loadDashboard();
+    loadBenefits();
   }, []);
 
+  if (viewingCardId) {
+    const cardsList = data?.section2_portfolio_health?.cards ?? [];
+    const card = cardsList.find((c) => c.card_id === viewingCardId);
+    const viewDaysElapsed = data?.period_start
+      ? Math.max(1, Math.round((Date.now() - new Date(data.period_start).getTime()) / 86400000))
+      : 90;
+    return (
+      <CardDetailView
+        card={card}
+        daysElapsed={viewDaysElapsed}
+        benefitRows={benefitRows.filter((r) => r.card_id === viewingCardId)}
+        onBack={() => setViewingCardId(null)}
+        onBenefitsChanged={loadBenefits}
+      />
+    );
+  }
+
   if (drillDown === "benefits") {
-    return <BenefitsDrillDown onBack={() => setDrillDown(null)} />;
+    return <BenefitsDrillDown initialRows={benefitRows} onBack={() => setDrillDown(null)} onChanged={loadBenefits} />;
   }
 
   if (drillDown) {
@@ -768,22 +948,28 @@ export default function Dashboard() {
         {disclaimers.financial_summary || DEFAULT_FINANCIAL_DISCLAIMER}
       </div>
 
-      <div style={{ padding: "0 16px 16px" }}>
-        <div
-          onClick={() => setDrillDown("benefits")}
-          style={{
-            background: `linear-gradient(135deg, ${NAVY_CARD}, ${NAVY_LIGHT})`, border: `1px solid ${GOLD}55`,
-            borderRadius: 14, padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center",
-            cursor: "pointer",
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>🎁 Your Benefits</span>
-            <span style={{ fontSize: 10, color: "#7a9bcc" }}>Golf, lounge, movie tickets & milestones — track what you're actually using</span>
-          </div>
-          <span style={{ color: GOLD, fontSize: 18, fontWeight: 800 }}>→</span>
+      {benefitRows.length > 0 && (
+        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5 }}>🎁 Your Benefits</div>
+          {computeCategorySummaries(benefitRows).map(({ cat, subtitle }) => (
+            <div
+              key={cat}
+              onClick={() => setDrillDown("benefits")}
+              style={{
+                background: `linear-gradient(135deg, ${NAVY_CARD}, ${NAVY_LIGHT})`, border: `1px solid ${GOLD}44`,
+                borderRadius: 12, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center",
+                cursor: "pointer",
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
+                <span style={{ fontSize: 10, color: "#7a9bcc" }}>{subtitle}</span>
+              </div>
+              <span style={{ color: GOLD, fontSize: 16, fontWeight: 800 }}>→</span>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
 
       <PortfolioHealth cards={cards} bestCard={bestCard} worstCard={worstCard} disclaimer={disclaimers.portfolio_health} />
 
@@ -805,7 +991,7 @@ export default function Dashboard() {
 
       <div style={s.cardList}>
         {cards.map((card) => (
-          <CardTile key={card.card_id} card={card} daysElapsed={daysElapsed} />
+          <CardTile key={card.card_id} card={card} daysElapsed={daysElapsed} onClick={() => setViewingCardId(card.card_id)} />
         ))}
       </div>
     </div>
