@@ -505,6 +505,8 @@ function PortfolioHealth({ cards, bestCard, worstCard, disclaimer }) {
 }
 
 function AnnualisedSection({ cards, daysElapsed, disclaimer }) {
+  const [expanded, setExpanded] = useState(false);
+
   const projected = cards.map((c) => ({
     ...c,
     projectedAnnual: projectAnnual(c.total_earned, daysElapsed),
@@ -514,10 +516,15 @@ function AnnualisedSection({ cards, daysElapsed, disclaimer }) {
 
   return (
     <div style={{ padding: "0 0 4px" }}>
-      <div style={{ padding: "12px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{ padding: "12px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+      >
         <span style={s.sectionTitle}>📊 Annualised Benefit Estimate</span>
+        <span style={{ color: "#7a9bcc", fontSize: 12, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▼</span>
       </div>
 
+      {expanded && (
       <div style={s.analysisBox}>
         <div>
           <div style={s.analysisTitle}>Projected 12-Month Earning</div>
@@ -544,6 +551,7 @@ function AnnualisedSection({ cards, daysElapsed, disclaimer }) {
         })}
         <span style={{ fontSize: 9, color: "#4a6a9a", fontStyle: "italic" }}>{disclaimer || DEFAULT_PORTFOLIO_DISCLAIMER}</span>
       </div>
+      )}
     </div>
   );
 }
@@ -675,88 +683,115 @@ function CardDetailView({ card, daysElapsed, benefitRows, onBack, onBenefitsChan
       {benefitRows.length > 0 && (
         <div style={{ padding: "4px 16px 16px" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>🎁 Benefits</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...benefitRows].sort((a, b) => CATEGORY_ORDER.indexOf(getBenefitCategory(a.benefit_type)) - CATEGORY_ORDER.indexOf(getBenefitCategory(b.benefit_type))).map((row) => {
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            {sortedRows.map((row) => {
               const key = row.benefit_type;
               const label = BENEFIT_TYPE_LABELS[row.benefit_type] || row.benefit_type;
-
-              if (row.benefit_type === "milestone") {
-                return (
-                  <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{label}</div>
-                    <div style={{ background: "#0a1628", borderRadius: 8, height: 8, overflow: "hidden", marginBottom: 6 }}>
-                      <div style={{ background: GOLD, height: "100%", width: `${row.pct_complete}%` }} />
-                    </div>
-                    <div style={{ fontSize: 11, color: "#7a9bcc" }}>
-                      ₹{Number(row.spend_progress).toLocaleString("en-IN")} of ₹{Number(row.spend_target).toLocaleString("en-IN")} ({row.pct_complete}%)
-                    </div>
-                    {row.reward_type === "choice" ? (
-                      <div style={{ marginTop: 8 }}>
-                        {row.confirmation_message && (
-                          <div style={{ fontSize: 11, color: row.qualified ? "#4ade80" : "#7a9bcc", marginBottom: row.qualified && !row.selected_choice ? 8 : 0 }}>{row.confirmation_message}</div>
-                        )}
-                        {row.qualified && !row.selected_choice && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {(row.choices || []).map((c) => (
-                              <button key={c} disabled={saving} onClick={() => pickMilestoneChoice(row, c)}
-                                style={{ background: "#1a2f50", border: "1px solid #C9A84C", color: GOLD, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                                {c}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      row.benefit_description && <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 6 }}>{row.benefit_description}{row.benefit_value_rupees ? ` (~₹${row.benefit_value_rupees})` : ""}</div>
-                    )}
-                  </div>
-                );
-              }
-
-              if (row.type === "unlimited") {
-                return (
-                  <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#4ade80" }}>Unlimited</span>
-                  </div>
-                );
-              }
+              const isSelected = selectedRowKey === key;
+              const cat = getBenefitCategory(row.benefit_type);
+              let primaryValue;
+              if (row.benefit_type === "milestone") primaryValue = `${row.pct_complete}%`;
+              else if (row.type === "unlimited") primaryValue = "Unlimited";
+              else primaryValue = `${row.used}/${row.allocated}`;
 
               return (
-                <div key={key} style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{row.used} of {row.allocated} used</span>
+                <div
+                  key={key}
+                  onClick={() => setSelectedRowKey(isSelected ? null : key)}
+                  style={{
+                    background: isSelected ? `linear-gradient(135deg, ${NAVY_CARD}, ${NAVY_LIGHT})` : NAVY_CARD,
+                    border: `1px solid ${isSelected ? GOLD : "#2a4a7a"}`, borderRadius: 12, padding: "14px 12px", cursor: "pointer",
+                    display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 92,
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{CATEGORY_ICONS[cat]}</span>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#7a9bcc", marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: row.type === "unlimited" ? "#4ade80" : "#fff" }}>{primaryValue}</div>
                   </div>
-                  {row.pending_confirmation > 0 && (
-                    <div style={{ fontSize: 10, color: "#f0b429", marginTop: 4 }}>{row.pending_confirmation} visit(s) awaiting your confirmation</div>
-                  )}
-                  {row.spend_threshold && (
-                    <div style={{ fontSize: 10, color: "#7a9bcc", marginTop: 4 }}>Requires ₹{Number(row.spend_threshold).toLocaleString("en-IN")} spend to unlock</div>
-                  )}
-                  {reportingKey === key ? (
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <input
-                        type="number" min="0" autoFocus placeholder="Times used"
-                        value={reportCount} onChange={(e) => setReportCount(e.target.value)}
-                        style={{ flex: 1, background: "#0a1628", border: "1px solid #1e3a6a", borderRadius: 8, padding: "8px 10px", color: "#fff", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                      <button disabled={saving} onClick={() => submitSelfReport(row)} style={{ background: GOLD, color: "#0a1628", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                        {saving ? "..." : "Save"}
-                      </button>
-                      <button disabled={saving} onClick={() => { setReportingKey(null); setReportCount(""); }} style={{ background: "transparent", border: "1px solid #2a4a7a", color: "#7a9bcc", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <span onClick={() => { setReportingKey(key); setReportCount(String(row.used)); }} style={{ display: "inline-block", marginTop: 8, fontSize: 10, color: "#7a9bcc", textDecoration: "underline", cursor: "pointer" }}>
-                      Update how many you've used
-                    </span>
-                  )}
                 </div>
               );
             })}
           </div>
+
+          {sortedRows.filter((r) => r.benefit_type === selectedRowKey).map((row) => {
+            const label = BENEFIT_TYPE_LABELS[row.benefit_type] || row.benefit_type;
+
+            if (row.benefit_type === "milestone") {
+              return (
+                <div key="detail" style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{label}</div>
+                  <div style={{ background: "#0a1628", borderRadius: 8, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                    <div style={{ background: GOLD, height: "100%", width: `${row.pct_complete}%` }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#7a9bcc" }}>
+                    ₹{Number(row.spend_progress).toLocaleString("en-IN")} of ₹{Number(row.spend_target).toLocaleString("en-IN")} ({row.pct_complete}%)
+                  </div>
+                  {row.reward_type === "choice" ? (
+                    <div style={{ marginTop: 8 }}>
+                      {row.confirmation_message && (
+                        <div style={{ fontSize: 11, color: row.qualified ? "#4ade80" : "#7a9bcc", marginBottom: row.qualified && !row.selected_choice ? 8 : 0 }}>{row.confirmation_message}</div>
+                      )}
+                      {row.qualified && !row.selected_choice && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {(row.choices || []).map((c) => (
+                            <button key={c} disabled={saving} onClick={() => pickMilestoneChoice(row, c)}
+                              style={{ background: "#1a2f50", border: "1px solid #C9A84C", color: GOLD, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    row.benefit_description && <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 6 }}>{row.benefit_description}{row.benefit_value_rupees ? ` (~₹${row.benefit_value_rupees})` : ""}</div>
+                  )}
+                </div>
+              );
+            }
+
+            if (row.type === "unlimited") {
+              return (
+                <div key="detail" style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14, textAlign: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{label} - Unlimited, no cap</span>
+                </div>
+              );
+            }
+
+            return (
+              <div key="detail" style={{ background: NAVY_CARD, border: "1px solid #2a4a7a", borderRadius: 12, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{row.used} of {row.allocated} used</span>
+                </div>
+                {row.pending_confirmation > 0 && (
+                  <div style={{ fontSize: 10, color: "#f0b429", marginTop: 4 }}>{row.pending_confirmation} visit(s) awaiting your confirmation</div>
+                )}
+                {row.spend_threshold && (
+                  <div style={{ fontSize: 10, color: "#7a9bcc", marginTop: 4 }}>Requires ₹{Number(row.spend_threshold).toLocaleString("en-IN")} spend to unlock</div>
+                )}
+                {reportingKey === row.benefit_type ? (
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <input
+                      type="number" min="0" autoFocus placeholder="Times used"
+                      value={reportCount} onChange={(e) => setReportCount(e.target.value)}
+                      style={{ flex: 1, background: "#0a1628", border: "1px solid #1e3a6a", borderRadius: 8, padding: "8px 10px", color: "#fff", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}
+                    />
+                    <button disabled={saving} onClick={() => submitSelfReport(row)} style={{ background: GOLD, color: "#0a1628", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                      {saving ? "..." : "Save"}
+                    </button>
+                    <button disabled={saving} onClick={() => { setReportingKey(null); setReportCount(""); }} style={{ background: "transparent", border: "1px solid #2a4a7a", color: "#7a9bcc", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <span onClick={() => { setReportingKey(row.benefit_type); setReportCount(String(row.used)); }} style={{ display: "inline-block", marginTop: 8, fontSize: 10, color: "#7a9bcc", textDecoration: "underline", cursor: "pointer" }}>
+                    Update how many you've used
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
