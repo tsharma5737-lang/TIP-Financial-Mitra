@@ -662,6 +662,12 @@ function CardDetailView({ card, daysElapsed, benefitRows, onBack, onBenefitsChan
     }
   }
 
+  // Same priority order (Milestone first, Golf last) as the main
+  // dashboard tiles, not the server's raw insertion order.
+  const sortedRows = [...benefitRows].sort(
+    (a, b) => CATEGORY_ORDER.indexOf(getBenefitCategory(a.benefit_type)) - CATEGORY_ORDER.indexOf(getBenefitCategory(b.benefit_type))
+  );
+
   return (
     <div style={s.container}>
       <div style={{ ...s.header, display: "flex", alignItems: "center", gap: 10 }}>
